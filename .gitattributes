@@ -1,0 +1,18 @@
+* text=auto
+
+# Normalize line endings for source
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Treat notebooks and binary assets appropriately
+*.ipynb text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.npz binary
+*.pkl binary
+*.pdf binary
