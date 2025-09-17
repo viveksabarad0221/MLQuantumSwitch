@@ -119,16 +119,15 @@ class CompatibilityMeasure:
     - is_povm(povm): quick validity checks for POVM elements
     - mutual_eigenspace_disturbance(povm1, povm2): compute disturbance scalar
     - incompatibility_distance_matrix(povms): pairwise distance matrix
-    - noisy_povm_with_kraus_qobj(P, lam, ...): build noisy POVM and Kraus ops
+    - noisy_povm_with_kraus(P, lam, ...): build noisy POVM and Kraus ops
     - bloch_direction_from_projective(povm): recover Bloch axis of a binary
       projective qubit POVM.
     """
 
-    def __init__(self, *, atol: float = 1e-9, method: str = "analytical", rng=None, splits: int = 1):
+    def __init__(self, *, atol: float = 1e-9, method: str = "analytical", rng=None):
         self.atol = float(atol)
         self.method = method
-        self.rng = np.random.default_rng(rng)
-        self.splits = 1  # default splits for noisy_povm_with_kraus_qobj
+        self.rng = np.random.default_rng(rng) 
 
     @staticmethod
     def pauli_operators() -> Tuple[Qobj, Qobj, Qobj]:
@@ -237,10 +236,152 @@ class CompatibilityMeasure:
                 D[j, i] = d
         return D
 
-    # (Removed earlier duplicate noisy_povm_with_kraus_qobj + bloch_direction definitions)
+    # ---------- Convenience wrappers ----------
+    @staticmethod
+    def bloch_direction_from_projective(povm: Sequence[Qobj]) -> np.ndarray:
+        """Recover the Bloch vector n from a binary projective qubit POVM.
+
+        Expects `povm = [E_plus, E_minus]` where E_plus = (I + n·σ)/2. The
+        returned 3-vector `n` is normalized and gives the measurement axis.
+        """
+        if len(povm) != 2:
+            raise ValueError("Expected binary POVM [E_plus, E_minus].")
+        d = _dimension_from_povm(povm)
+        if d != 2:
+            raise ValueError("Only qubit POVMs supported for this method.")
+        I = qeye(2)
+        n_sigma = 2 * povm[0] - I  # equals n · σ
+        comps = np.array([(n_sigma * _SIGMAS[i]).tr().real for i in range(3)]) / 2.0 # type: ignore
+
+
+        return comps
+
+class ClusteringToolkit:
+    """Sampling and clustering utilities for observables.
+
+    The toolkit provides instance-based RNG and convenient defaults for
+    sampling Bloch vectors within a cone, converting Bloch vectors into
+    binary qubit projective POVMs, generating noisy datasets, computing
+    pairwise incompatibility distances using a linked :class:`CompatibilityMeasure`,
+    and clustering those distances via k-medoids, k-means, or HDBSCAN.
+
+    Parameters
+    ----------
+    rng : seed | np.random.Generator | None
+        RNG or seed for reproducible sampling.
+    default_cluster_method : str
+        Default clustering algorithm to use ('k-medoids', 'k-means', 'hdbscan').
+    init : str
+        Initialization strategy for k-medoids/k-means ('kmeans++', 'linear++', 'random').
+    n_points : int
+        Default number of data points sampled per cluster/axis.
+    spread_angle : float
+        Default cone opening angle in degrees for sampling Bloch directions.
+    cm : CompatibilityMeasure | None
+        CompatibilityMeasure instance used for noisy POVM generation and distance
+        computations; if None a default instance will be created.
+    axes : sequence of 3-vectors | None
+        List of Bloch axes around which clusters are sampled. If None the
+        default axes [[1,0,0], [0,0,1]] are used.
+
+    Main methods
+    ------------
+    - sample_unit_vectors_cone(n, spread_angle, axis): sample Bloch directions in a cone
+    - projective_qubit_povm_from_axis(n): build a binary projective POVM from a Bloch axis
+    - generate_noisy_dataset(etas, n_clusters, ...): sample vectors, add noise, compute distances
+    - cluster_from_distance(D, n_clusters): cluster objects given a distance matrix
+
+    """
+
+    def __init__(self, *, rng=None, cluster_method: str = "k-medoids", init: str = "kmeans++",
+                 n_points: int = 50, spread_angle: float = 22.5, cm: CompatibilityMeasure | None = None,
+                 axes: Sequence[Iterable[float]] | None = None, splits: int = 10):
+        """Instance-based clustering toolkit.
+
+        Parameters added by request:
+        - n_points: number of data points for each cluster (per axis)
+        - spread_angle: cone opening angle in degrees
+        - cm: CompatibilityMeasure instance to generate POVMs
+        - axes: iterable of 3-vector axes for clusters
+        - splits: Splits for generation of Kraus operators for noisy POVMs
+        """
+        self.rng = np.random.default_rng(rng)
+        self.cluster_method = cluster_method
+        self.init = init
+        self.splits = splits
+        self.n_points = int(n_points)
+        self.spread_angle = float(spread_angle)
+        if cm is None:
+            self.cm = CompatibilityMeasure()
+        else:
+            self.cm = cm
+        if axes is None:
+            self.axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])]
+        else:
+            self.axes = [np.asarray(a, dtype=float) for a in axes]
+
+    # ----- Sampling -----
+    def sample_unit_vectors_cone_x(self, n: int = 50, spread_angle: float = 22.5, center: str = 'positive') -> np.ndarray:
+        """Sample `n` unit vectors in a cone about the +x axis.
+
+        The cone opening is given by `spread_angle`. `center` controls whether the
+        cone is centered in the +x, -x, or both directions.
+        """
+        if not (0.0 <= spread_angle <= 180.0):
+            raise ValueError("spread_angle must be in [0, 180].")
+        theta = np.deg2rad(spread_angle)
+        u = self.rng.uniform(np.cos(theta), 1.0, size=n)
+        beta = self.rng.uniform(0.0, 2*np.pi, size=n)
+        sin_alpha = np.sqrt(np.maximum(0.0, 1.0 - u*u))
+        v = np.column_stack((u, sin_alpha*np.cos(beta), sin_alpha*np.sin(beta)))
+        if center == 'negative':
+            v = -v
+        elif center == 'both':
+            signs = self.rng.choice([-1.0, 1.0], size=n)
+            v = v * signs[:, None]
+        elif center != 'positive':
+            raise ValueError("center must be one of {'positive','negative','both'}.")
+        return v
+
+    def sample_unit_vectors_cone(self, n=None, spread_angle=None, axis=None, rng=None):
+        """Sample `n` unit vectors in a cone around `axis`.
+
+        Any of `n`, `spread_angle`, or `axis` can be omitted and will default to
+        the corresponding instance attributes: `self.n_points`,
+        `self.spread_angle`, and `self.axes[0]` respectively.
+        """
+        if n is None:
+            n = self.n_points
+        if spread_angle is None:
+            spread_angle = self.spread_angle
+        if axis is None:
+            axis = self.axes[0]
+        axis = np.asarray(axis, dtype=float)
+        axis /= np.linalg.norm(axis)
+        v_local = self.sample_unit_vectors_cone_x(n, spread_angle, center='positive')
+        x_axis = np.array([1.0, 0.0, 0.0])
+        if np.allclose(axis, x_axis):
+            return v_local
+        if np.allclose(axis, -x_axis):
+            return -v_local
+        rot_axis = np.cross(x_axis, axis); rot_axis /= np.linalg.norm(rot_axis)
+        angle = np.arccos(np.clip(np.dot(x_axis, axis), -1.0, 1.0))
+        K = np.array([[0, -rot_axis[2], rot_axis[1]],[rot_axis[2], 0, -rot_axis[0]],[-rot_axis[1], rot_axis[0], 0]])
+        R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
+        return v_local @ R.T
 
     @staticmethod
-    def noisy_povm_with_kraus_qobj(P, lam, p=None, *, splits=1, random_split=False, rng=None):
+    def projective_qubit_povm_from_axis(n: Iterable[float]) -> List[Qobj]:
+        """Return the binary projective POVM aligned with Bloch vector `n`.
+
+        Returns two Qobj POVM elements [E+, E-] with E+ = (I + n·σ)/2.
+        """
+        n = _normalize_direction(np.asarray(n, dtype=float))
+        I = qeye(2)
+        n_dot_sigma = n[0] * _SIGMAS[0] + n[1] * _SIGMAS[1] + n[2] * _SIGMAS[2]
+        return [(I + n_dot_sigma) * 0.5, (I - n_dot_sigma) * 0.5]
+    
+    def noisy_povm_with_kraus(self, P, lam, p=None, *, random_split=False, rng=None):
         """
         Build the noisy measurement {E_i} and a Kraus realization {N_{i,j}} from a
         projective POVM {P_i} using the isotropic-noise model:
@@ -304,7 +445,7 @@ class CompatibilityMeasure:
                 raise ValueError("Invalid probability vector p.")
             p = p / s
 
-        if splits < 1:
+        if self.splits < 1:
             raise ValueError("splits ≥ 1.")
 
         def split_mass(total, m):
@@ -315,8 +456,8 @@ class CompatibilityMeasure:
 
         E, N = [], []
         for i in range(k):
-            a_parts = split_mass(1.0 - lam, splits)
-            b_parts = split_mass(lam * p[i], splits)
+            a_parts = split_mass(1.0 - lam, self.splits)
+            b_parts = split_mass(lam * p[i], self.splits)
 
             Ei = (1 - lam) * P[i] + (lam * p[i]) * I
             E.append(Ei)
@@ -325,7 +466,7 @@ class CompatibilityMeasure:
             for aj, bj in zip(a_parts, b_parts):
                 # sqrt(a P_i + b I) = sqrt(a+b) P_i + sqrt(b) (I - P_i)
                 K = np.sqrt(aj + bj) * P[i] + np.sqrt(bj) * (I - P[i])
-                Ni.append(Qobj(K.full()))
+                Ni.append(K)
             N.append(Ni)
 
         S = 0
@@ -337,150 +478,6 @@ class CompatibilityMeasure:
             E[-1] = E[-1] + corr
 
         return E, N
-    
-    # ---------- Convenience wrappers ----------
-    @staticmethod
-    def bloch_direction_from_projective(povm: Sequence[Qobj]) -> np.ndarray:
-        """Recover the Bloch vector n from a binary projective qubit POVM.
-
-        Expects `povm = [E_plus, E_minus]` where E_plus = (I + n·σ)/2. The
-        returned 3-vector `n` is normalized and gives the measurement axis.
-        """
-        if len(povm) != 2:
-            raise ValueError("Expected binary POVM [E_plus, E_minus].")
-        d = _dimension_from_povm(povm)
-        if d != 2:
-            raise ValueError("Only qubit POVMs supported for this method.")
-        I = qeye(2)
-        n_sigma = 2 * povm[0] - I  # equals n · σ
-        comps = np.array([(n_sigma * _SIGMAS[i]).tr().real for i in range(3)]) / 2.0 # type: ignore
-
-
-        return comps
-
-class ClusteringToolkit:
-    """Sampling and clustering utilities for observables.
-
-    The toolkit provides instance-based RNG and convenient defaults for
-    sampling Bloch vectors within a cone, converting Bloch vectors into
-    binary qubit projective POVMs, generating noisy datasets, computing
-    pairwise incompatibility distances using a linked :class:`CompatibilityMeasure`,
-    and clustering those distances via k-medoids, k-means, or HDBSCAN.
-
-    Parameters
-    ----------
-    rng : seed | np.random.Generator | None
-        RNG or seed for reproducible sampling.
-    default_cluster_method : str
-        Default clustering algorithm to use ('k-medoids', 'k-means', 'hdbscan').
-    init : str
-        Initialization strategy for k-medoids/k-means ('kmeans++', 'linear++', 'random').
-    n_points : int
-        Default number of data points sampled per cluster/axis.
-    theta_deg : float
-        Default cone opening angle in degrees for sampling Bloch directions.
-    cm : CompatibilityMeasure | None
-        CompatibilityMeasure instance used for noisy POVM generation and distance
-        computations; if None a default instance will be created.
-    axes : sequence of 3-vectors | None
-        List of Bloch axes around which clusters are sampled. If None the
-        default axes [[1,0,0], [0,0,1]] are used.
-
-    Main methods
-    ------------
-    - sample_unit_vectors_cone(n, theta_deg, axis): sample Bloch directions in a cone
-    - projective_qubit_povm_from_axis(n): build a binary projective POVM from a Bloch axis
-    - generate_noisy_dataset(etas, n_clusters, ...): sample vectors, add noise, compute distances
-    - cluster_from_distance(D, n_clusters): cluster objects given a distance matrix
-
-    """
-
-    def __init__(self, *, rng=None, default_cluster_method: str = "k-medoids", init: str = "kmeans++",
-                 n_points: int = 50, theta_deg: float = 22.5, cm: CompatibilityMeasure | None = None,
-                 axes: Sequence[Iterable[float]] | None = None):
-        """Instance-based clustering toolkit.
-
-        Parameters added by request:
-        - n_points: number of data points for each cluster (per axis)
-        - theta_deg: cone opening angle in degrees
-        - cm: CompatibilityMeasure instance to generate POVMs
-        - axes: iterable of 3-vector axes for clusters
-        """
-        self.rng = np.random.default_rng(rng)
-        self.default_cluster_method = default_cluster_method
-        self.init = init
-        # New instance defaults
-        self.n_points = int(n_points)
-        self.theta_deg = float(theta_deg)
-        if cm is None:
-            self.cm = CompatibilityMeasure()
-        else:
-            self.cm = cm
-        if axes is None:
-            self.axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])]
-        else:
-            self.axes = [np.asarray(a, dtype=float) for a in axes]
-
-    # ----- Sampling -----
-    def sample_unit_vectors_cone_x(self, n: int = 50, theta_deg: float = 22.5, center: str = 'positive') -> np.ndarray:
-        """Sample `n` unit vectors in a cone about the +x axis.
-
-        The cone opening is given by `theta_deg`. `center` controls whether the
-        cone is centered in the +x, -x, or both directions.
-        """
-        if not (0.0 <= theta_deg <= 180.0):
-            raise ValueError("theta_deg must be in [0, 180].")
-        theta = np.deg2rad(theta_deg)
-        u = self.rng.uniform(np.cos(theta), 1.0, size=n)
-        beta = self.rng.uniform(0.0, 2*np.pi, size=n)
-        sin_alpha = np.sqrt(np.maximum(0.0, 1.0 - u*u))
-        v = np.column_stack((u, sin_alpha*np.cos(beta), sin_alpha*np.sin(beta)))
-        if center == 'negative':
-            v = -v
-        elif center == 'both':
-            signs = self.rng.choice([-1.0, 1.0], size=n)
-            v = v * signs[:, None]
-        elif center != 'positive':
-            raise ValueError("center must be one of {'positive','negative','both'}.")
-        return v
-
-    def sample_unit_vectors_cone(self, n=None, theta_deg=None, axis=None, rng=None):
-        """Sample `n` unit vectors in a cone around `axis`.
-
-        Any of `n`, `theta_deg`, or `axis` can be omitted and will default to
-        the corresponding instance attributes: `self.n_points`,
-        `self.theta_deg`, and `self.axes[0]` respectively.
-        """
-        if n is None:
-            n = self.n_points
-        if theta_deg is None:
-            theta_deg = self.theta_deg
-        if axis is None:
-            axis = self.axes[0]
-        axis = np.asarray(axis, dtype=float)
-        axis /= np.linalg.norm(axis)
-        v_local = self.sample_unit_vectors_cone_x(n, theta_deg, center='positive')
-        x_axis = np.array([1.0, 0.0, 0.0])
-        if np.allclose(axis, x_axis):
-            return v_local
-        if np.allclose(axis, -x_axis):
-            return -v_local
-        rot_axis = np.cross(x_axis, axis); rot_axis /= np.linalg.norm(rot_axis)
-        angle = np.arccos(np.clip(np.dot(x_axis, axis), -1.0, 1.0))
-        K = np.array([[0, -rot_axis[2], rot_axis[1]],[rot_axis[2], 0, -rot_axis[0]],[-rot_axis[1], rot_axis[0], 0]])
-        R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
-        return v_local @ R.T
-
-    @staticmethod
-    def projective_qubit_povm_from_axis(n: Iterable[float]) -> List[Qobj]:
-        """Return the binary projective POVM aligned with Bloch vector `n`.
-
-        Returns two Qobj POVM elements [E+, E-] with E+ = (I + n·σ)/2.
-        """
-        n = _normalize_direction(np.asarray(n, dtype=float))
-        I = qeye(2)
-        n_dot_sigma = n[0] * _SIGMAS[0] + n[1] * _SIGMAS[1] + n[2] * _SIGMAS[2]
-        return [(I + n_dot_sigma) * 0.5, (I - n_dot_sigma) * 0.5]
 
     # ----- Clustering -----
     def cluster_from_distance(self, D, n_clusters: int, *, method: str | None = None, n_init: int = 10, max_iter: int = 300, tol: float = 1e-4, random_state=None):
@@ -501,7 +498,7 @@ class ClusteringToolkit:
         numpy.ndarray
             Integer label array of length n assigning each item to a cluster.
         """
-        method = self.default_cluster_method if method is None else method
+        method = self.cluster_method if method is None else method
         D = np.asarray(D, dtype=float)
         if D.ndim != 2 or D.shape[0] != D.shape[1]:
             raise ValueError("D must be square (n x n).")
@@ -671,8 +668,8 @@ class ClusteringToolkit:
         return np.min(self._pair_sqdist(X, C), axis=1)
 
     # ----- Dataset generation (instance-based) -----
-    def generate_noisy_dataset(self, etas, n_clusters, *, n=None, spread_angle=None, methods=("kmeans","kmedoids","hdbscan"), cone_seeds=(42,43), base_seed=12345):
-        """Generate noisy POVMs sampled around the instance's `axes`.
+    def generate_noisy_dataset(self, n_clusters, *, etas: list[float] | None = None, n=None, spread_angle=None, methods=("kmeans","kmedoids","hdbscan"), cone_seeds=(42,43), base_seed=12345, noisy: bool = True):
+        """Generate POVM datasets (noisy or noiseless) sampled around the instance's `axes`.
 
         Parameters
         ----------
@@ -683,26 +680,33 @@ class ClusteringToolkit:
         n : int, optional
             Total number of samples; if None ``2 * self.n_points`` is used.
         spread_angle : float, optional
-            Cone opening angle in degrees; if None ``self.theta_deg`` is used.
+            Cone opening angle in degrees; if None ``self.spread_angle`` is used.
         methods : tuple[str], optional
             Which clustering methods to run for each eta.
         cone_seeds : tuple[int], optional
             Seeds used to initialize cone samplers per axis for reproducibility.
         base_seed : int, optional
             Seed used to construct the base randomness for noise vectors.
+        noisy : bool, optional
+            If True (default) generate noisy POVMs using the isotropic-noise model.
+            If False, generate noiseless/projective POVMs (lam_vec will be zeros).
 
         Returns
         -------
         dict
             A dictionary with keys 'meta', 'vectors', and 'per_eta'. The
             'per_eta' sub-dictionary maps each eta to a dict containing the
-            lam_vec, noisy_E (array of noisy POVM matrices), pairwise D and
+            lam_vec, noisy_E (array of POVM matrices), pairwise D and
             the clustering labels for each requested method.
         """
+        if noisy and (etas is None or len(etas) == 0):
+            raise ValueError("At least one eta must be provided for noisy dataset generation.")
+        else:
+            etas = [0.0] if etas is None else etas
         if n is None:
             n = 2 * self.n_points
         if spread_angle is None:
-            spread_angle = self.theta_deg
+            spread_angle = self.spread_angle
 
         # sample cones around each axis stored in self.axes
         if len(self.axes) < 2:
@@ -713,7 +717,7 @@ class ClusteringToolkit:
         seeds = list(cone_seeds)
         for idx, ax in enumerate(self.axes):
             seed = seeds[idx] if idx < len(seeds) else None
-            local_tool = ClusteringToolkit(rng=seed, n_points=n_per_cluster, theta_deg=spread_angle, cm=self.cm, axes=self.axes)
+            local_tool = ClusteringToolkit(rng=seed, n_points=n_per_cluster, spread_angle=spread_angle, cm=self.cm, axes=self.axes)
             v = local_tool.sample_unit_vectors_cone(n_per_cluster, spread_angle, ax)
             v /= np.linalg.norm(v, axis=1, keepdims=True)
             vecs.append(v)
@@ -721,16 +725,25 @@ class ClusteringToolkit:
         proj_povms = [self.projective_qubit_povm_from_axis(all_vectors[i]) for i in range(all_vectors.shape[0])]
         rng = np.random.default_rng(base_seed)
         base_Rl = rng.uniform(0.0, 1.0, size=all_vectors.shape[0])
-        out = {"meta": {"spread_angle": float(spread_angle), "n": int(all_vectors.shape[0]), "etas": list(map(float, etas)), "cone_seeds": tuple(map(int, cone_seeds)), "base_seed": int(base_seed), "axes": [list(a) for a in self.axes]}, "vectors": all_vectors, "per_eta": {}}
+        out = {"meta": {"spread_angle": float(spread_angle), "n": int(all_vectors.shape[0]), "etas": list(map(float, etas)), "cone_seeds": tuple(map(int, cone_seeds)), "base_seed": int(base_seed), "axes": [list(a) for a in self.axes], "noisy": bool(noisy)}, "vectors": all_vectors, "per_eta": {}}
         for eta in etas:
-            lam_vec = eta * base_Rl
-            noisy_povms = []
+            if noisy:
+                lam_vec = eta * base_Rl
+            else:
+                lam_vec = np.zeros_like(base_Rl)
+            noisy_kraus = []
             noisy_arrays = []
-            for i, proj in enumerate(proj_povms):
-                Ei, _ = self.cm.noisy_povm_with_kraus_qobj(proj, lam=float(lam_vec[i]))
-                noisy_povms.append(Ei)
-                noisy_arrays.append([E.full() for E in Ei])
-            D = self.cm.incompatibility_distance_matrix(noisy_povms)
+            if noisy:
+                for i, proj in enumerate(proj_povms):
+                    E, N = self.noisy_povm_with_kraus(proj, lam=float(lam_vec[i]))
+                    noisy_kraus.append([K for Ni in N for K in Ni])
+                    noisy_arrays.append([Ei.full() for Ei in E])
+            else:
+                for i, proj in enumerate(proj_povms):
+                    E = N = proj  # projective (noiseless) POVM
+                    noisy_kraus.append(E)  # each Ni has one element
+                    noisy_arrays.append([Ei.full() for Ei in E])
+            D = self.cm.incompatibility_distance_matrix(noisy_kraus)
             labels = {m: self.cluster_from_distance(D, n_clusters=n_clusters, method=m) for m in methods}
             out["per_eta"][float(eta)] = {"lam_vec": lam_vec, "noisy_E": np.asarray(noisy_arrays, dtype=complex), "D": D, "labels": labels}
         return out
