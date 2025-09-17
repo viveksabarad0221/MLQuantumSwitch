@@ -81,198 +81,164 @@ def _normalize_direction(n: np.ndarray, atol: float = 1e-12) -> np.ndarray:
     return n / l
 
 def operator_double_ket(A: Qobj) -> Qobj:
-    """Convert operator A to its double-ket vector form |A⟩⟩."""
+    """Convert a square operator to its double-ket column-vector form |A⟩⟩.
+
+    Parameters
+    ----------
+    A : Qobj
+        Square operator to vectorize.
+
+    Returns
+    -------
+    Qobj
+        Column vector Qobj containing the operator entries in column-major
+        order (shape (d*d, 1)).
+    """
     d1, d2 = A.shape
     if d1 != d2:
         raise ValueError("Operator must be square.")
     return Qobj(A.full().reshape(-1, 1))
 
 
-class CompatibilityMeasure():
-    """Tools for constructing observables, measuring incompatibility, and clustering.
+class CompatibilityMeasure:
+    """Utilities for measuring incompatibility between quantum measurements.
 
-    The class is stateless; methods operate on provided inputs.
+    Parameters
+    ----------
+    atol : float
+        Absolute numerical tolerance used for PSD/Hermitian checks.
+    method : str
+        Default disturbance computation method; one of {'analytical',
+        'numerical', 'experimental'}.
+    rng : seed | np.random.Generator | None
+        RNG seed or generator used for stochastic behavior.
+
+    Main methods
+    ------------
+    - pauli_operators(): return Pauli X, Y, Z as Qobj
+    - is_povm(povm): quick validity checks for POVM elements
+    - mutual_eigenspace_disturbance(povm1, povm2): compute disturbance scalar
+    - incompatibility_distance_matrix(povms): pairwise distance matrix
+    - noisy_povm_with_kraus_qobj(P, lam, ...): build noisy POVM and Kraus ops
+    - bloch_direction_from_projective(povm): recover Bloch axis of a binary
+      projective qubit POVM.
     """
 
-    # ---------- Construction utilities ----------
+    def __init__(self, *, atol: float = 1e-9, method: str = "analytical", rng=None, splits: int = 1):
+        self.atol = float(atol)
+        self.method = method
+        self.rng = np.random.default_rng(rng)
+        self.splits = 1  # default splits for noisy_povm_with_kraus_qobj
+
     @staticmethod
     def pauli_operators() -> Tuple[Qobj, Qobj, Qobj]:
-        """Return the qubit Pauli operators (σx, σy, σz)."""
+        """Return the three single-qubit Pauli operators as Qobj.
+
+        Returns
+        -------
+        (Qobj, Qobj, Qobj)
+            Pauli X, Y, Z (in that order).
+        """
         return sigmax(), sigmay(), sigmaz()
 
-    @staticmethod
-    def projective_qubit_povm_from_axis(n: Iterable[float]) -> List[Qobj]:
-        """Return binary projective POVM along direction n: [E_plus, E_minus].
+    # NOTE: projective_qubit_povm_from_axis moved to ClusteringToolkit per refactor
 
-        E_± = (I ± n·σ)/2, where n is a unit 3-vector.
+    def is_povm(self, povm: Sequence[Qobj]) -> bool:
+        """Quickly test whether `povm` is a valid POVM.
+
+        Checks that elements are square Qobj of the same dimension, positive
+        semidefinite (within `self.atol`), and that they sum to the identity
+        (within `self.atol`). Returns True when all checks pass.
         """
-        n = _normalize_direction(np.asarray(n, dtype=float))
-        I = qeye(2)
-        n_dot_sigma = n[0] * _SIGMAS[0] + n[1] * _SIGMAS[1] + n[2] * _SIGMAS[2]
-        E_plus = (I + n_dot_sigma) * 0.5
-        E_minus = (I - n_dot_sigma) * 0.5
-        return [E_plus, E_minus]
-
-    # ---------- Validation ----------
-    @staticmethod
-    def is_povm(povm: Sequence[Qobj], atol: float = 1e-7) -> bool:
-        """Check if a list of effects forms a valid POVM."""
         if len(povm) == 0:
             return False
         d = _dimension_from_povm(povm)
-        if any(not _is_psd_qobj(E, atol=atol) for E in povm):
+        if any(not _is_psd_qobj(E, atol=self.atol) for E in povm):
             return False
-        S = sum(povm[1:], povm[0] * 0)  # zero-like
+        S = sum(povm[1:], povm[0] * 0)
         for E in povm:
             S = S + E
-        return (S - qeye(d)).norm() <= atol
+        return (S - qeye(d)).norm() <= self.atol
 
-    # ---------- Analytic qubit incompatibility ----------
-    @staticmethod
-    def mutual_eigenspace_disturbance(povm1: Sequence[Qobj], povm2: Sequence[Qobj], state: Qobj = None, method: str = "analytical", atol: float = 1e-9) -> float: # type: ignore
-        """Compute the mutual eigenspace disturbance between two POVMs.
+    def mutual_eigenspace_disturbance(self, povm1: Sequence[Qobj], povm2: Sequence[Qobj], *, state: Qobj | None = None) -> float:
+        """Compute a disturbance/incompatibility scalar between two POVMs.
 
-        This measures how much the two POVMs disturb each other's eigenspaces.
+        Three algorithms are supported via `self.method`:
+        - 'analytical': closed form formula for binary qubit projective POVMs,
+          implemented via nested traces.
+        - 'numerical': constructs superoperators and evaluates overlaps
+          numerically (suitable for higher-dimensional POVMs).
+        - 'experimental': a commutator-based heuristic used for experiments.
+
+        Parameters
+        ----------
+        povm1, povm2 : sequence of Qobj
+            The POVMs to compare (must have same element shape/dimension).
+        state : Qobj, optional
+            If provided, the state used in the analytical/numerical expressions;
+            otherwise the maximally mixed state is used.
+
+        Returns
+        -------
+        float
+            A nonnegative scalar quantifying mutual eigenspace disturbance.
         """
+        method = self.method
         if povm1[0].shape != povm2[0].shape:
             raise ValueError("POVMs must have the same dimension.")
         if state is None:
-            # Default to the maximally mixed (identity) state for the given POVM dimension
             dimensions = povm1[0].dims
             state = qeye(dimensions[0]) / povm1[0].shape[0]
-        if not _is_hermitian_qobj(state, atol=atol):
+        if not _is_hermitian_qobj(state, atol=self.atol):
             raise ValueError("State must be Hermitian.")
-        # Ensure state is normalized
         state = state / state.norm()
         if method == "analytical":
             summation = 0.0
+            state_mat = state.full()
             for E in povm1:
+                E_mat = E.full()
                 for F in povm2:
-                    summation += (state * E * F * E * F).tr() # pyright: ignore[reportOperatorIssue]
-            MED = np.sqrt(1-summation.real/ povm1[0].shape[0])  
-            return float(MED)
+                    F_mat = F.full()
+                    summation += np.trace(state_mat @ E_mat @ F_mat @ E_mat @ F_mat)
+            return float(np.sqrt(1 - (summation.real / povm1[0].shape[0])))
         elif method == "numerical":
             C_tilda = 0
             for E in povm1:
                 C_tilda += tensor(E, E.dag())
-            dimensions = C_tilda.dims # type: ignore
+            dimensions = C_tilda.dims  # type: ignore
             D_list = [operator_double_ket(F) for F in povm2]
             D = 0
-            for d in D_list:
-                D += d * d.dag() # type: ignore
-            D.dims = dimensions # type: ignore
-            NCOM = np.sqrt(1 - (D * C_tilda * tensor(qeye(povm1[0].dims[0]), state.trans())).tr().real) # type: ignore
+            for dvec in D_list:
+                D += dvec * dvec.dag()  # type: ignore
+            D.dims = dimensions  # type: ignore
+            NCOM = np.sqrt(1 - (D * C_tilda * tensor(qeye(povm1[0].dims[0]), state.trans())).tr().real)  # type: ignore
             return float(NCOM)
         elif method == "experimental":
             summation = 0.0
             for E in povm1:
                 for F in povm2:
-                    summation += (state * commutator(E, F) * commutator(E, F).dag()).tr() # type: ignore
-            NCOM = np.sqrt(summation/ 2)
-            return float(NCOM)
+                    summation += (state * commutator(E, F) * commutator(E, F).dag()).tr()  # type: ignore
+            return float(np.sqrt(summation / 2))
         else:
             raise ValueError(f"Unknown method: {method}")
-        
-    @staticmethod
-    def incompatibility_distance_matrix(povms: Sequence[Sequence[Qobj]], method: str = "analytical", atol: float = 1e-9) -> np.ndarray:
-        """Compute the pairwise distance matrix for a list of POVMs.
 
-        The (i,j) entry is the mutual eigenspace disturbance between povms[i] and povms[j].
+    def incompatibility_distance_matrix(self, povms: Sequence[Sequence[Qobj]]) -> np.ndarray:
+        """Build the symmetric pairwise disturbance/distance matrix for `povms`.
+
+        Returns an (n x n) numpy array with zeros on the diagonal and the
+        disturbance metric at (i, j) for i != j.
         """
         n = len(povms)
         D = np.zeros((n, n), dtype=float)
         for i in range(n):
             for j in range(i + 1, n):
-                d = CompatibilityMeasure.mutual_eigenspace_disturbance(povms[i], povms[j], method=method, atol=atol)
+                d = self.mutual_eigenspace_disturbance(povms[i], povms[j])
                 D[i, j] = d
                 D[j, i] = d
         return D
-        
-    # ---------- Sampling and POVM generation ----------
-    @staticmethod   
-    def sample_unit_vectors_cone_x(n: int = 50, theta_deg: float = 22.5, center: str = 'positive', rng=None) -> np.ndarray:
-        """
-        Draw n unit vectors uniformly over the spherical cap of half-angle `theta_deg`
-        about the x-axis.
 
-        Parameters
-        ----------
-        n : int
-            Number of vectors.
-        theta_deg : float
-            Maximum polar angle from the +x axis (degrees), 0 <= theta <= 180.
-        center : {'positive', 'negative', 'both'}, default 'positive'
-            - 'positive': cap centered at +x (angle from +x <= theta).
-            - 'negative': cap centered at -x (angle from -x <= theta).
-            - 'both': mixture of the two caps with equal probability.
-        rng : None | int | np.random.Generator
-            Random seed or Generator for reproducibility.
+    # (Removed earlier duplicate noisy_povm_with_kraus_qobj + bloch_direction definitions)
 
-        Returns
-        -------
-        v : (n, 3) np.ndarray
-            Unit vectors.
-        """
-        if not (0.0 <= theta_deg <= 180.0):
-            raise ValueError("theta_deg must be in [0, 180].")
-        theta = np.deg2rad(theta_deg)
-
-        # RNG setup
-        rng = np.random.default_rng(rng)
-
-        # For uniform solid-angle sampling on a spherical cap around +x:
-        # dΩ = sin(α) dα dβ  =>  u = cos(α) is uniform.
-        u = rng.uniform(np.cos(theta), 1.0, size=n)   # u = cos(α), α ∈ [0, θ]
-        beta = rng.uniform(0.0, 2*np.pi, size=n)      # azimuth about x-axis
-
-        sin_alpha = np.sqrt(np.maximum(0.0, 1.0 - u*u))
-        # x-axis as polar axis: (x, y, z) = (cos α, sin α cos β, sin α sin β)
-        v = np.column_stack((u, sin_alpha*np.cos(beta), sin_alpha*np.sin(beta)))
-
-        if center == 'negative':
-            v = -v
-        elif center == 'both':
-            signs = rng.choice([-1.0, 1.0], size=n)
-            v = v * signs[:, None]
-        elif center != 'positive':
-            raise ValueError("center must be one of {'positive','negative','both'}.")
-        
-        return v
-    
-    @staticmethod
-    def sample_unit_vectors_cone(n, theta_deg, axis, rng=None):
-        axis = np.asarray(axis, dtype=float)
-        axis /= np.linalg.norm(axis)
-        v_local = CompatibilityMeasure.sample_unit_vectors_cone_x(n, theta_deg, center='positive', rng=rng)
-        x_axis = np.array([1.0, 0.0, 0.0])
-        if np.allclose(axis, x_axis):
-            return v_local
-        if np.allclose(axis, -x_axis):
-            return -v_local
-        rot_axis = np.cross(x_axis, axis)
-        rot_axis /= np.linalg.norm(rot_axis)
-        angle = np.arccos(np.clip(np.dot(x_axis, axis), -1.0, 1.0))
-        K = np.array([
-            [0, -rot_axis[2], rot_axis[1]],
-            [rot_axis[2], 0, -rot_axis[0]],
-            [-rot_axis[1], rot_axis[0], 0]
-        ])
-        R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
-        return v_local @ R.T
-
-    @staticmethod
-    def generate_povms_from_bloch_vectors(vectors: np.ndarray) -> List[List[Qobj]]:
-        """Generate binary projective qubit POVMs from a list of Bloch vectors.
-
-        Each vector should be a 3D array-like representing a direction.
-        Returns a list of POVMs, each being [E_plus, E_minus].
-        """
-        povms = []
-        for n in vectors:
-            povm = CompatibilityMeasure.projective_qubit_povm_from_axis(n)
-            povms.append(povm)
-        return povms
-    
     @staticmethod
     def noisy_povm_with_kraus_qobj(P, lam, p=None, *, splits=1, random_split=False, rng=None):
         """
@@ -308,6 +274,8 @@ class CompatibilityMeasure():
         N : list[list[Qobj]]
             Kraus operators per outcome, satisfying  E_i = ∑_j N_{i,j}† N_{i,j}.
         """
+        # Parameters and Returns are described in the detailed docstring
+        # above; keep the implementation docstring minimal here.
         if not P:
             raise ValueError("Empty POVM.")
         d = P[0].shape[0]
@@ -371,10 +339,12 @@ class CompatibilityMeasure():
         return E, N
     
     # ---------- Convenience wrappers ----------
-    def bloch_direction_from_projective(self, povm: Sequence[Qobj]) -> np.ndarray:
-        """Given a binary projective qubit POVM [E+, E-], return its Bloch direction.
+    @staticmethod
+    def bloch_direction_from_projective(povm: Sequence[Qobj]) -> np.ndarray:
+        """Recover the Bloch vector n from a binary projective qubit POVM.
 
-        Assumes E+ = (I + n·σ)/2, returns n.
+        Expects `povm = [E_plus, E_minus]` where E_plus = (I + n·σ)/2. The
+        returned 3-vector `n` is normalized and gives the measurement axis.
         """
         if len(povm) != 2:
             raise ValueError("Expected binary POVM [E_plus, E_minus].")
@@ -389,126 +359,205 @@ class CompatibilityMeasure():
         return comps
 
 class ClusteringToolkit:
-    """Tools for clustering observables based on incompatibility distance matrices.
+    """Sampling and clustering utilities for observables.
 
-    The class is stateless; methods operate on provided inputs.
+    The toolkit provides instance-based RNG and convenient defaults for
+    sampling Bloch vectors within a cone, converting Bloch vectors into
+    binary qubit projective POVMs, generating noisy datasets, computing
+    pairwise incompatibility distances using a linked :class:`CompatibilityMeasure`,
+    and clustering those distances via k-medoids, k-means, or HDBSCAN.
+
+    Parameters
+    ----------
+    rng : seed | np.random.Generator | None
+        RNG or seed for reproducible sampling.
+    default_cluster_method : str
+        Default clustering algorithm to use ('k-medoids', 'k-means', 'hdbscan').
+    init : str
+        Initialization strategy for k-medoids/k-means ('kmeans++', 'linear++', 'random').
+    n_points : int
+        Default number of data points sampled per cluster/axis.
+    theta_deg : float
+        Default cone opening angle in degrees for sampling Bloch directions.
+    cm : CompatibilityMeasure | None
+        CompatibilityMeasure instance used for noisy POVM generation and distance
+        computations; if None a default instance will be created.
+    axes : sequence of 3-vectors | None
+        List of Bloch axes around which clusters are sampled. If None the
+        default axes [[1,0,0], [0,0,1]] are used.
+
+    Main methods
+    ------------
+    - sample_unit_vectors_cone(n, theta_deg, axis): sample Bloch directions in a cone
+    - projective_qubit_povm_from_axis(n): build a binary projective POVM from a Bloch axis
+    - generate_noisy_dataset(etas, n_clusters, ...): sample vectors, add noise, compute distances
+    - cluster_from_distance(D, n_clusters): cluster objects given a distance matrix
+
     """
-    @staticmethod
-    def cluster_from_distance(
-        D,
-        n_clusters: int,
-        method: str = "k-medoids",
-        *,
-        init: str = "kmeans++",      # <--- new
-        random_state=None,
-        n_init: int = 10,
-        max_iter: int = 300,
-        tol: float = 1e-4,
-    ):
+
+    def __init__(self, *, rng=None, default_cluster_method: str = "k-medoids", init: str = "kmeans++",
+                 n_points: int = 50, theta_deg: float = 22.5, cm: CompatibilityMeasure | None = None,
+                 axes: Sequence[Iterable[float]] | None = None):
+        """Instance-based clustering toolkit.
+
+        Parameters added by request:
+        - n_points: number of data points for each cluster (per axis)
+        - theta_deg: cone opening angle in degrees
+        - cm: CompatibilityMeasure instance to generate POVMs
+        - axes: iterable of 3-vector axes for clusters
         """
-        Cluster items given a pairwise distance matrix.
+        self.rng = np.random.default_rng(rng)
+        self.default_cluster_method = default_cluster_method
+        self.init = init
+        # New instance defaults
+        self.n_points = int(n_points)
+        self.theta_deg = float(theta_deg)
+        if cm is None:
+            self.cm = CompatibilityMeasure()
+        else:
+            self.cm = cm
+        if axes is None:
+            self.axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])]
+        else:
+            self.axes = [np.asarray(a, dtype=float) for a in axes]
+
+    # ----- Sampling -----
+    def sample_unit_vectors_cone_x(self, n: int = 50, theta_deg: float = 22.5, center: str = 'positive') -> np.ndarray:
+        """Sample `n` unit vectors in a cone about the +x axis.
+
+        The cone opening is given by `theta_deg`. `center` controls whether the
+        cone is centered in the +x, -x, or both directions.
+        """
+        if not (0.0 <= theta_deg <= 180.0):
+            raise ValueError("theta_deg must be in [0, 180].")
+        theta = np.deg2rad(theta_deg)
+        u = self.rng.uniform(np.cos(theta), 1.0, size=n)
+        beta = self.rng.uniform(0.0, 2*np.pi, size=n)
+        sin_alpha = np.sqrt(np.maximum(0.0, 1.0 - u*u))
+        v = np.column_stack((u, sin_alpha*np.cos(beta), sin_alpha*np.sin(beta)))
+        if center == 'negative':
+            v = -v
+        elif center == 'both':
+            signs = self.rng.choice([-1.0, 1.0], size=n)
+            v = v * signs[:, None]
+        elif center != 'positive':
+            raise ValueError("center must be one of {'positive','negative','both'}.")
+        return v
+
+    def sample_unit_vectors_cone(self, n=None, theta_deg=None, axis=None, rng=None):
+        """Sample `n` unit vectors in a cone around `axis`.
+
+        Any of `n`, `theta_deg`, or `axis` can be omitted and will default to
+        the corresponding instance attributes: `self.n_points`,
+        `self.theta_deg`, and `self.axes[0]` respectively.
+        """
+        if n is None:
+            n = self.n_points
+        if theta_deg is None:
+            theta_deg = self.theta_deg
+        if axis is None:
+            axis = self.axes[0]
+        axis = np.asarray(axis, dtype=float)
+        axis /= np.linalg.norm(axis)
+        v_local = self.sample_unit_vectors_cone_x(n, theta_deg, center='positive')
+        x_axis = np.array([1.0, 0.0, 0.0])
+        if np.allclose(axis, x_axis):
+            return v_local
+        if np.allclose(axis, -x_axis):
+            return -v_local
+        rot_axis = np.cross(x_axis, axis); rot_axis /= np.linalg.norm(rot_axis)
+        angle = np.arccos(np.clip(np.dot(x_axis, axis), -1.0, 1.0))
+        K = np.array([[0, -rot_axis[2], rot_axis[1]],[rot_axis[2], 0, -rot_axis[0]],[-rot_axis[1], rot_axis[0], 0]])
+        R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
+        return v_local @ R.T
+
+    @staticmethod
+    def projective_qubit_povm_from_axis(n: Iterable[float]) -> List[Qobj]:
+        """Return the binary projective POVM aligned with Bloch vector `n`.
+
+        Returns two Qobj POVM elements [E+, E-] with E+ = (I + n·σ)/2.
+        """
+        n = _normalize_direction(np.asarray(n, dtype=float))
+        I = qeye(2)
+        n_dot_sigma = n[0] * _SIGMAS[0] + n[1] * _SIGMAS[1] + n[2] * _SIGMAS[2]
+        return [(I + n_dot_sigma) * 0.5, (I - n_dot_sigma) * 0.5]
+
+    # ----- Clustering -----
+    def cluster_from_distance(self, D, n_clusters: int, *, method: str | None = None, n_init: int = 10, max_iter: int = 300, tol: float = 1e-4, random_state=None):
+        """Cluster items given a precomputed (symmetric) distance matrix D.
 
         Parameters
         ----------
-        D : (n, n) array_like
-            Symmetric, non-negative distance matrix with zeros on the diagonal.
+        D : array-like, shape (n, n)
+            Symmetric precomputed distance matrix.
         n_clusters : int
-            Number of clusters (k).
-        method : {'k-medoids','k-means', 'hdbscan'}, default 'k-medoids'
-        init : {'kmeans++','linear++','random'}, default 'kmeans++'
-            Initialization for k-medoids:
-            - 'kmeans++' : pick next medoid with prob ∝ (nearest-distance)^2
-            - 'linear++' : pick next medoid with prob ∝ (nearest-distance)
-            - 'random'   : k distinct indices uniformly at random
-            (Ignored for k-means, which always uses k-means++ in this implementation.)
-        random_state : None | int | np.random.Generator
-        n_init, max_iter, tol : standard meanings
+            Number of clusters to produce.
+        method : str, optional
+            Clustering method override; if None the instance default is used.
+        n_init, max_iter, tol, random_state : see implementation
 
         Returns
         -------
-        labels : (n,) np.ndarray[int]
-            Cluster labels 0..k-1.
+        numpy.ndarray
+            Integer label array of length n assigning each item to a cluster.
         """
+        method = self.default_cluster_method if method is None else method
         D = np.asarray(D, dtype=float)
         if D.ndim != 2 or D.shape[0] != D.shape[1]:
             raise ValueError("D must be square (n x n).")
         n = D.shape[0]
         if not (1 <= n_clusters <= n):
-            raise ValueError("n_clusters must be in [1, n].")
+            raise ValueError("n_clusters out of range")
         if np.any(D < -1e-12):
             raise ValueError("Distances must be non-negative.")
         if not np.allclose(D, D.T, atol=1e-10, rtol=0):
             D = 0.5 * (D + D.T)
         np.fill_diagonal(D, 0.0)
-
-        rng = np.random.default_rng(random_state)
-
+        rng = np.random.default_rng(random_state) if random_state is not None else self.rng
         if method.lower() in {"k-medoids", "kmedoids", "pam"}:
             best_labels, best_cost = None, np.inf
             for _ in range(max(1, n_init)):
-                labels, medoids, cost = ClusteringToolkit._pam_kmedoids(D, n_clusters, rng, max_iter, init=init)
+                labels, medoids, cost = self._pam_kmedoids(D, n_clusters, rng, max_iter, init=self.init)
                 if cost < best_cost - 1e-12:
                     best_labels, best_cost = labels, cost
             return best_labels
-
         elif method.lower() in {"k-means", "kmeans"}:
-            X = ClusteringToolkit._classical_mds(D)
+            X = self._classical_mds(D)
             best_labels, best_inertia = None, np.inf
             for _ in range(max(1, n_init)):
-                labels, inertia = ClusteringToolkit._kmeans_lloyd(X, n_clusters, rng, max_iter, tol)
+                labels, inertia = self._kmeans_lloyd(X, n_clusters, rng, max_iter, tol)
                 if inertia < best_inertia - 1e-12:
                     best_labels, best_inertia = labels, inertia
             return best_labels
-        
         elif method.lower() == "hdbscan":
             try:
                 import hdbscan
             except ImportError as e:
                 raise ImportError("hdbscan package is required for method='hdbscan'.") from e
-            clusterer = hdbscan.HDBSCAN(
-                min_cluster_size=5,  # Minimum cluster size is set to 5 by default
-                metric='precomputed',
-                cluster_selection_method='eom'
-            )
-            labels = clusterer.fit_predict(D)
-            return labels
-
+            clusterer = hdbscan.HDBSCAN(min_cluster_size=5, metric='precomputed', cluster_selection_method='eom')
+            return clusterer.fit_predict(D)
         else:
-            raise ValueError("method must be one of {'k-medoids','k-means'}.")
+            raise ValueError("Unsupported clustering method")
 
-
-    # ---------- Helpers ----------
-
-    @staticmethod
-    def _pam_kmedoids(D, k, rng, max_iter, init="kmeans++"):
-        """
-        PAM-style k-medoids with configurable initialization.
-        Objective: sum_i distance(point_i, medoid_of_cluster_i)
-        """
+    # helper methods (adapted)
+    def _pam_kmedoids(self, D, k, rng, max_iter, init="kmeans++"):
         n = D.shape[0]
-        medoids = ClusteringToolkit._init_medoids(D, k, rng, mode=init)
-
+        medoids = self._init_medoids(D, k, rng, mode=init)
         prev_cost = np.inf
         for _ in range(max_iter):
-            # Assign to nearest medoid
-            distances_to_medoids = D[:, medoids]          # (n, k)
+            distances_to_medoids = D[:, medoids]
             labels = np.argmin(distances_to_medoids, axis=1)
             cost = distances_to_medoids[np.arange(n), labels].sum()
-
-            # Update medoids cluster-wise
             new_medoids = medoids.copy()
             for j in range(k):
                 idx = np.where(labels == j)[0]
                 if idx.size == 0:
-                    # Re-seed empty cluster with farthest point from any current medoid
                     far_idx = np.argmax(np.min(D[:, medoids], axis=1))
                     new_medoids[j] = far_idx
                     continue
                 subD = D[np.ix_(idx, idx)]
                 within_sums = subD.sum(axis=1)
                 new_medoids[j] = idx[np.argmin(within_sums)]
-
-            # De-duplicate and refill if needed
             medoids = np.unique(new_medoids)
             while medoids.size < k:
                 dmin = np.min(D[:, medoids], axis=1) if medoids.size > 0 else D.mean(axis=1)
@@ -517,11 +566,9 @@ class ClusteringToolkit:
                     remaining = np.setdiff1d(np.arange(n), medoids)
                     cand = int(rng.choice(remaining))
                 medoids = np.append(medoids, cand)
-
             if prev_cost - cost <= 1e-12:
                 break
             prev_cost = cost
-
         distances_to_medoids = D[:, medoids]
         labels = np.argmin(distances_to_medoids, axis=1)
         cost = distances_to_medoids[np.arange(n), labels].sum()
@@ -529,289 +576,218 @@ class ClusteringToolkit:
 
     @staticmethod
     def _init_medoids(D, k, rng, mode="kmeans++"):
-        """
-        Initialize medoids from the distance matrix.
-
-        mode:
-        - 'kmeans++' : pick next index with prob ∝ (min_distance_to_selected)^2
-        - 'linear++' : pick next index with prob ∝ (min_distance_to_selected)
-        - 'random'   : k distinct indices uniformly
-        """
         n = D.shape[0]
         mode = mode.lower()
         if mode == "random":
             return np.array(rng.choice(n, size=k, replace=False), dtype=int)
-
-        # Start with one uniformly
         medoids = [int(rng.integers(0, n))]
-
         for _ in range(1, k):
-            dmin = np.min(D[:, medoids], axis=1)  # distance to nearest chosen medoid
-            dmin[medoids] = 0.0                   # prevent re-choosing existing medoids
-
+            dmin = np.min(D[:, medoids], axis=1)
+            dmin[medoids] = 0.0
             if mode == "kmeans++":
-                weights = dmin * dmin             # squared distance weighting
+                weights = dmin * dmin
             elif mode in {"linear++", "kmedoids++"}:
                 weights = dmin
             else:
                 raise ValueError("init must be one of {'kmeans++','linear++','random'}.")
-
             total = weights.sum()
             if not np.isfinite(total) or total <= 1e-20:
-                # Degenerate: all distances ~0 to chosen medoids -> pick a random non-medoid
                 choices = np.setdiff1d(np.arange(n), np.array(medoids))
                 medoids.append(int(rng.choice(choices)))
             else:
                 probs = weights / total
-                # draw from non-zero-probability indices; rng.choice handles zero probs
                 idx = int(rng.choice(n, p=probs))
-                # ensure uniqueness (rare if probs computed correctly)
                 if idx in medoids:
                     choices = np.setdiff1d(np.arange(n), np.array(medoids))
                     idx = int(rng.choice(choices))
                 medoids.append(idx)
-
         return np.array(medoids, dtype=int)
 
     @staticmethod
     def _classical_mds(D):
-        """
-        Classical MDS (Torgerson) from distances to centered Gram matrix, then eigendecomposition.
-        Returns coordinates X with as many positive-eigenvalue dimensions as available.
-        """
         n = D.shape[0]
         D2 = D ** 2
         J = np.eye(n) - np.ones((n, n)) / n
-        B = -0.5 * J @ D2 @ J  # double-centering -> Gram matrix
-
-        # Symmetrize for numerical stability
+        B = -0.5 * J @ D2 @ J
         B = 0.5 * (B + B.T)
-
-        # Eigen-decompose (B is symmetric)
         w, V = np.linalg.eigh(B)
-        idx = np.argsort(w)[::-1]  # descending
-        w = w[idx]
-        V = V[:, idx]
-
-        # Keep strictly positive eigenvalues (tolerance guards round-off)
+        idx = np.argsort(w)[::-1]
+        w = w[idx]; V = V[:, idx]
         pos = w > (1e-12 * w[0] if w[0] > 0 else 1e-12)
         if not np.any(pos):
-            # Degenerate case: collapse to 1D zeros
             return np.zeros((n, 1), dtype=float)
-
         Lhalf = np.sqrt(w[pos])
-        X = V[:, pos] * Lhalf  # scale each eigenvector by sqrt(eig)
-        return X
+        return V[:, pos] * Lhalf
 
-    @staticmethod
-    def _kmeans_lloyd(X, k, rng, max_iter, tol):
+    def _kmeans_lloyd(self, X, k, rng, max_iter, tol):
         if not np.isfinite(X).all():
-            raise ValueError("Embedding contains non-finite values. "
-                            "Your distance matrix may be far from Euclidean; "
-                            "use k-medoids or check D.")
-
+            raise ValueError("Non-finite embedding; use k-medoids.")
         n, d = X.shape
         centers = np.empty((k, d), dtype=X.dtype)
-
-        # pick first center uniformly
-        first = rng.integers(0, n)
-        centers[0] = X[first]
-
-        # distances to nearest chosen center (squared)
-        closest_sq = ClusteringToolkit._row_min_sqdist(X, centers[0:1])
-        closest_sq = np.clip(closest_sq, 0.0, None)   # <-- IMPORTANT
-
+        centers[0] = X[rng.integers(0, n)]
+        closest_sq = self._row_min_sqdist(X, centers[0:1])
+        closest_sq = np.clip(closest_sq, 0.0, None)
         for i in range(1, k):
-            weights = np.clip(closest_sq, 0.0, None)  # ensure non-negative
+            weights = np.clip(closest_sq, 0.0, None)
             total = weights.sum()
-
             if not np.isfinite(weights).all() or total <= 1e-20:
-                # degenerate case: pick uniformly
                 idx = int(rng.integers(0, n))
             else:
                 probs = weights / total
-                # np.random.Generator.choice demands probs >= 0 and sum to 1
                 idx = int(rng.choice(n, p=probs))
-
             centers[i] = X[idx]
-
-            # update closest squared distances to nearest center so far
-            new_d2 = ClusteringToolkit._row_min_sqdist(X, centers[i:i+1])
+            new_d2 = self._row_min_sqdist(X, centers[i:i+1])
             closest_sq = np.minimum(closest_sq, new_d2)
-            closest_sq = np.clip(closest_sq, 0.0, None)  # <-- IMPORTANT
-
-        # ---- regular Lloyd iterations (unchanged except for numerical guards) ----
+            closest_sq = np.clip(closest_sq, 0.0, None)
         prev_inertia = np.inf
         for _ in range(max_iter):
-            d2 = ClusteringToolkit._pair_sqdist(X, centers)
+            d2 = self._pair_sqdist(X, centers)
             labels = np.argmin(d2, axis=1)
             inertia = d2[np.arange(n), labels].sum()
-
             new_centers = np.zeros_like(centers)
             counts = np.bincount(labels, minlength=k)
             for j in range(k):
                 if counts[j] > 0:
                     new_centers[j] = X[labels == j].mean(axis=0)
                 else:
-                    # reseed to farthest point
                     far_idx = np.argmax(np.min(d2, axis=1))
                     new_centers[j] = X[far_idx]
-
             centers = new_centers
-
             if prev_inertia - inertia <= tol * max(1.0, prev_inertia):
                 break
             prev_inertia = inertia
-
-        d2 = ClusteringToolkit._pair_sqdist(X, centers)
+        d2 = self._pair_sqdist(X, centers)
         labels = np.argmin(d2, axis=1)
         inertia = d2[np.arange(n), labels].sum()
         return labels.astype(int), float(inertia)
 
     @staticmethod
     def _pair_sqdist(X, C):
-        # squared Euclidean distances between rows of X (n,d) and C (k,d)
-        X2 = np.sum(X * X, axis=1, keepdims=True)      # (n,1)
-        C2 = np.sum(C * C, axis=1, keepdims=True).T    # (1,k)
-        d2 = X2 + C2 - 2.0 * (X @ C.T)
-        # Numerical guard: tiny negatives -> 0
-        return np.maximum(d2, 0.0)
+        X2 = np.sum(X * X, axis=1, keepdims=True)
+        C2 = np.sum(C * C, axis=1, keepdims=True).T
+        return np.maximum(X2 + C2 - 2.0 * (X @ C.T), 0.0)
 
-    @staticmethod
-    def _row_min_sqdist(X, C):
-        return np.min(ClusteringToolkit._pair_sqdist(X, C), axis=1)
-    
-    @staticmethod
-    def generate_noisy_dataset(n, spread_angle, etas, n_clusters, methods= ('kmeans','kmedoids','hdbscan'),
-                           cone_seeds=(42, 43), base_seed=12345):
-        rng_cone_x = np.random.default_rng(cone_seeds[0])
-        rng_cone_z = np.random.default_rng(cone_seeds[1])
-        vx = CompatibilityMeasure.sample_unit_vectors_cone(n//2, theta_deg=spread_angle, axis=[1,0,0], rng=rng_cone_x)
-        vz = CompatibilityMeasure.sample_unit_vectors_cone(n//2, theta_deg=spread_angle, axis=[0,0,1], rng=rng_cone_z)
-        vx = vx / np.linalg.norm(vx, axis=1, keepdims=True)
-        vz = vz / np.linalg.norm(vz, axis=1, keepdims=True)
-        all_vectors = np.vstack([vx, vz])
-        observables = [CompatibilityMeasure.projective_qubit_povm_from_axis(all_vectors[i]) for i in range(n)]
+    def _row_min_sqdist(self, X, C):
+        return np.min(self._pair_sqdist(X, C), axis=1)
 
+    # ----- Dataset generation (instance-based) -----
+    def generate_noisy_dataset(self, etas, n_clusters, *, n=None, spread_angle=None, methods=("kmeans","kmedoids","hdbscan"), cone_seeds=(42,43), base_seed=12345):
+        """Generate noisy POVMs sampled around the instance's `axes`.
+
+        Parameters
+        ----------
+        etas : iterable of float
+            Noise scaling factors for which noisy datasets will be generated.
+        n_clusters : int
+            Number of clusters to request when clustering the distance matrix.
+        n : int, optional
+            Total number of samples; if None ``2 * self.n_points`` is used.
+        spread_angle : float, optional
+            Cone opening angle in degrees; if None ``self.theta_deg`` is used.
+        methods : tuple[str], optional
+            Which clustering methods to run for each eta.
+        cone_seeds : tuple[int], optional
+            Seeds used to initialize cone samplers per axis for reproducibility.
+        base_seed : int, optional
+            Seed used to construct the base randomness for noise vectors.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys 'meta', 'vectors', and 'per_eta'. The
+            'per_eta' sub-dictionary maps each eta to a dict containing the
+            lam_vec, noisy_E (array of noisy POVM matrices), pairwise D and
+            the clustering labels for each requested method.
+        """
+        if n is None:
+            n = 2 * self.n_points
+        if spread_angle is None:
+            spread_angle = self.theta_deg
+
+        # sample cones around each axis stored in self.axes
+        if len(self.axes) < 2:
+            raise ValueError("At least two axes must be provided in self.axes to generate a two-cluster dataset.")
+        n_per_cluster = int(n // len(self.axes))
+        vecs = []
+        # allow deterministic cone seeds for reproducibility
+        seeds = list(cone_seeds)
+        for idx, ax in enumerate(self.axes):
+            seed = seeds[idx] if idx < len(seeds) else None
+            local_tool = ClusteringToolkit(rng=seed, n_points=n_per_cluster, theta_deg=spread_angle, cm=self.cm, axes=self.axes)
+            v = local_tool.sample_unit_vectors_cone(n_per_cluster, spread_angle, ax)
+            v /= np.linalg.norm(v, axis=1, keepdims=True)
+            vecs.append(v)
+        all_vectors = np.vstack(vecs)
+        proj_povms = [self.projective_qubit_povm_from_axis(all_vectors[i]) for i in range(all_vectors.shape[0])]
         rng = np.random.default_rng(base_seed)
-        base_Rl = rng.uniform(0.0, 1.0, size=n)
-
-        results = {"meta": {"spread_angle": float(spread_angle), "n": int(n),
-                            "etas": list(map(float, etas)),
-                            "cone_seeds": tuple(map(int, cone_seeds)),
-                            "base_seed": int(base_seed)},
-                "vectors": all_vectors,
-                "per_eta": {}}
-
+        base_Rl = rng.uniform(0.0, 1.0, size=all_vectors.shape[0])
+        out = {"meta": {"spread_angle": float(spread_angle), "n": int(all_vectors.shape[0]), "etas": list(map(float, etas)), "cone_seeds": tuple(map(int, cone_seeds)), "base_seed": int(base_seed), "axes": [list(a) for a in self.axes]}, "vectors": all_vectors, "per_eta": {}}
         for eta in etas:
             lam_vec = eta * base_Rl
-            noisy_E = []
-            kraus_flat = []
-            for i, obs in enumerate(observables):
-                Ei, Nij = CompatibilityMeasure.noisy_povm_with_kraus_qobj(obs, lam=float(lam_vec[i]))
-                noisy_E.append([E.full() for E in Ei])  # shape (2,2,2)
-                kraus_flat.append([K for Klist in Nij for K in Klist])
+            noisy_povms = []
+            noisy_arrays = []
+            for i, proj in enumerate(proj_povms):
+                Ei, _ = self.cm.noisy_povm_with_kraus_qobj(proj, lam=float(lam_vec[i]))
+                noisy_povms.append(Ei)
+                noisy_arrays.append([E.full() for E in Ei])
+            D = self.cm.incompatibility_distance_matrix(noisy_povms)
+            labels = {m: self.cluster_from_distance(D, n_clusters=n_clusters, method=m) for m in methods}
+            out["per_eta"][float(eta)] = {"lam_vec": lam_vec, "noisy_E": np.asarray(noisy_arrays, dtype=complex), "D": D, "labels": labels}
+        return out
 
-            D = CompatibilityMeasure.incompatibility_distance_matrix(kraus_flat)
-
-            labels = {}
-            for i, method in enumerate(methods):
-                labels[method] = ClusteringToolkit.cluster_from_distance(D, n_clusters=n_clusters, method=method)
-
-            # ready-to-plot payload for this eta
-            results["per_eta"][float(eta)] = {
-                "lam_vec": lam_vec,
-                "noisy_E": np.asarray(noisy_E, dtype=complex),    # (n, 2, 2, 2)
-                "D": D,
-                "labels": labels
-            }
-
-        return results
-
-    @staticmethod
-    def save_noisy_dataset(dataset, path_npz="Plots&Data/MLQS/noisy_obs_dataset.npz",
-                        path_pkl="Plots&Data/MLQS/noisy_obs_dataset.pkl"):
+    def save_noisy_dataset(self, dataset, path_npz="Plots&Data/MLQS/noisy_obs_dataset.npz", path_pkl="Plots&Data/MLQS/noisy_obs_dataset.pkl"):
         os.makedirs(os.path.dirname(path_npz), exist_ok=True)
-        # NPZ for arrays + small metadata; PKL for full dict (simple reload)
         meta = dataset["meta"]
-        vectors = dataset["vectors"]
-        etas = list(dataset["per_eta"].keys())
-        npz_payload = {"vectors": vectors, "etas": np.array(etas, dtype=float)}
+        etas = sorted(dataset["per_eta"].keys())
+        npz_payload = {"etas": np.array(etas, dtype=float), "vectors": dataset["vectors"],
+                       "meta_spread_angle": meta["spread_angle"], "meta_n": meta["n"],
+                       "meta_cone_seeds": np.array(meta["cone_seeds"], dtype=int), "meta_base_seed": meta["base_seed"]}
         for eta in etas:
-            key = f"E_eta_{eta:.2f}"
-            npz_payload[key] = dataset["per_eta"][eta]["noisy_E"]
-            npz_payload[f"D_eta_{eta:.2f}"] = dataset["per_eta"][eta]["D"]
-            npz_payload[f"labels_kmeans_eta_{eta:.2f}"] = dataset["per_eta"][eta]["labels"]["kmeans"]
-            npz_payload[f"labels_kmedoids_eta_{eta:.2f}"] = dataset["per_eta"][eta]["labels"]["kmedoids"]
-            npz_payload[f"lam_vec_eta_{eta:.2f}"] = dataset["per_eta"][eta]["lam_vec"]
-        # minimal meta
-        npz_payload["meta_spread_angle"] = meta["spread_angle"]
-        npz_payload["meta_n"] = meta["n"]
-        npz_payload["meta_cone_seeds"] = np.array(meta["cone_seeds"], dtype=int)
-        npz_payload["meta_base_seed"] = meta["base_seed"]
+            payload = dataset["per_eta"][eta]
+            npz_payload[f"noisy_E_eta_{eta:.2f}"] = payload["noisy_E"]
+            npz_payload[f"D_eta_{eta:.2f}"] = payload["D"]
+            npz_payload[f"lam_vec_eta_{eta:.2f}"] = payload["lam_vec"]
+            for m, labs in payload["labels"].items():
+                npz_payload[f"labels_{m}_eta_{eta:.2f}"] = labs
         np.savez_compressed(path_npz, **npz_payload)
-
         with open(path_pkl, "wb") as f:
             pickle.dump(dataset, f, protocol=4)
-
         return path_npz, path_pkl
 
-    @staticmethod
-    def plot_eta_grid_from_dataset(dataset, methods=('kmeans','kmedoids', 'hdbscan'),
-                                savepath="Plots&Data/MLQS/unnamed.png", fontsize=24):
+    def plot_eta_grid_from_dataset(self, dataset, methods=("kmeans","kmedoids","hdbscan"), savepath="Plots&Data/MLQS/unnamed.png", fontsize=18):
         etas = sorted(dataset["per_eta"].keys())
         fig = plt.figure(figsize=(5*len(etas), 5*len(methods)))
         axes = [fig.add_subplot(len(methods), len(etas), i + 1, projection='3d') for i in range(len(methods) * len(etas))]
-
         for col, eta in enumerate(etas):
             payload = dataset["per_eta"][eta]
-            noisy_E = payload["noisy_E"]           # (n,2,2,2)
+            noisy_E = payload["noisy_E"]
             for row, method in enumerate(methods):
-                labels = payload["labels"][method]  # (<n,)
-                ax = axes[row * 3 + col]
+                labels = payload["labels"][method]
+                ax = axes[row * len(etas) + col]
                 b = Bloch(fig=fig, axes=ax)
                 b.vector_color = ['b' if lab == 0 else 'g' for lab in labels for _ in (0, 1)]
                 b.vector_width = 1
                 for i in range(noisy_E.shape[0]):
-                    # reconstruct Qobj list [E0, E1] per observable
                     Ei = [Qobj(noisy_E[i, j]) for j in range(noisy_E.shape[1])]
                     b.add_states(Ei)  # type: ignore
                 b.render()
-
-        # Add big column labels (eta) at the top of the whole figure
-        col_count = 3
         for col, eta in enumerate(etas):
             ax = axes[col]
-            pos = ax.get_position()
-            x_center = pos.x0/0.9 + pos.width/2
-            fig.text(x_center, 0.9, rf"$\eta$={eta:.2f}", ha='center', va='bottom', fontsize=fontsize)
-
-        # Add row labels on the left side (vertical)
-        row_labels = methods
-        for row in range(len(row_labels)):
-            ax = axes[row * col_count]
-            pos = ax.get_position()
-            y_center = pos.y0 + pos.height / 2
-            # place a vertical label slightly left of the leftmost subplot
-            fig.text(pos.x0, y_center, row_labels[row], rotation='vertical',
-                    ha='center', va='center', fontsize=fontsize)
-
-        plt.tight_layout(rect=[0.1, 0, 1, 0.9])  # type: ignore # leave space for the top/left labels
-        if savepath is not None:
-            os.makedirs(os.path.dirname(savepath), exist_ok=True)
-            plt.savefig(savepath, dpi=300, bbox_inches='tight')
-        else:
-            savepath="Plots&Data/MLQS/unnamed.png"
-            plt.savefig(savepath, dpi=300, bbox_inches='tight')
+            pos = ax.get_position(); x_center = pos.x0/0.9 + pos.width/2
+            fig.text(x_center, 0.9, rf"$\\eta$={eta:.2f}", ha='center', va='bottom', fontsize=fontsize)
+        for row, method in enumerate(methods):
+            ax = axes[row * len(etas)]
+            pos = ax.get_position(); y_center = pos.y0 + pos.height / 2
+            fig.text(pos.x0, y_center, method, rotation='vertical', ha='center', va='center', fontsize=fontsize)
+        plt.tight_layout(rect=[0.1, 0, 1, 0.9])  # type: ignore
+        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+        plt.savefig(savepath, dpi=300, bbox_inches='tight')
         plt.show()
 
 
-    # -------- Example run in your notebook --------
-    # spread_angle = 22.5
-    # etas = [0.25, 0.50, 0.75]
-    # dataset = generate_noisy_dataset(cm, ct, n, spread_angle, etas)
-    # save_noisy_dataset(dataset)  # optional
-    # plot_eta_grid_from_dataset(dataset)
+    # ---------- Helpers ----------
+
+    # (Removed legacy static helper/dataset plotting methods to avoid duplication.)
 
 
 __all__ = [
