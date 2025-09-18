@@ -203,7 +203,7 @@ class CompatibilityMeasure:
         elif method == "numerical":
             C_tilda = 0
             for E in povm1:
-                C_tilda += tensor(E, E.dag())
+                C_tilda += tensor(E, E.conj())
             dimensions = C_tilda.dims  # type: ignore
             D_list = [operator_double_ket(F) for F in povm2]
             D = 0
@@ -768,6 +768,8 @@ class ClusteringToolkit:
         return path_npz, path_pkl
 
     def plot_eta_grid_from_dataset(self, dataset, methods=("kmeans","kmedoids","hdbscan"), savepath="Plots&Data/MLQS/unnamed.png", fontsize=18):
+        if savepath is None:
+            savepath = "Plots&Data/MLQS/unnamed.png"
         etas = sorted(dataset["per_eta"].keys())
         fig = plt.figure(figsize=(5*len(etas), 5*len(methods)))
         axes = [fig.add_subplot(len(methods), len(etas), i + 1, projection='3d') for i in range(len(methods) * len(etas))]
