@@ -42,12 +42,144 @@ from typing import Iterable, List, Sequence, Tuple, Optional
 import numpy as np
 from numpy.linalg import norm as _norm
 
-from qutip import Qobj, qeye, sigmax, sigmay, sigmaz, tensor, commutator, expect, Bloch
+from qutip import Qobj, Bloch, qeye, sigmax, sigmay, sigmaz, tensor, commutator, expect, basis, ket2dm
 import os
 import pickle
 import matplotlib.pyplot as plt
 
 _SIGMAS = [sigmax(), sigmay(), sigmaz()]
+
+def X_operator(d: int) -> Qobj:
+    """Generalized Pauli X operator in dimension d."""
+    mat = np.roll(np.eye(d), 1, axis=1)
+    return Qobj(mat)
+
+def Z_operator(d: int) -> Qobj:
+    """Generalized Pauli Z operator in dimension d."""
+    omega = np.exp(2j*np.pi/d)
+    return Qobj(np.diag([omega**j for j in range(d)]))
+
+def generate_mubs(d: int, mubs_array: Sequence[int]):
+    """
+    Generate projectors (MUBs) in dimension d for the specified indices in mubs_array.
+    Works fully if d is prime (or prime power with this simple construction).
+
+    Parameters
+    ----------
+    d : int
+        Dimension (prime or prime power).
+    mubs_array : sequence of int
+        Sequence of MUB indices to generate, length must be d+1 and values 1 or 0.
+        First index corresponds to computational basis, second to X basis, others to XZ^m.
+
+    Returns:
+    -------
+        A list of lists of projectors [ [P_0,...,P_{d-1}], ..., MUBs ].
+    """
+    if len(mubs_array) != d+1:
+        raise ValueError(f"Expected {d+1} MUB indices for dimension {d}, got {len(mubs_array)}")
+    X = X_operator(d)
+    Z = Z_operator(d)
+    mub_projectors = []
+
+    comp_basis = [basis(d, j) for j in range(d)]
+
+    # 3) Eigenbases of XZ^m, m=1,...,d-1
+    for idx, m in enumerate(mubs_array):
+        if m == 0:
+            continue
+        if idx == 0:
+            mub_projectors.append([ket2dm(ket) for ket in comp_basis])
+        elif idx == 1:
+            _, evecs = X.eigenstates()
+            mub_projectors.append([ket2dm(v) for v in evecs])
+        elif idx > 1:
+            U = X * (Z**idx) # type: ignore
+            _, evecs = U.eigenstates()
+            mub_projectors.append([ket2dm(v) for v in evecs])
+    return mub_projectors
+
+# --------- Higher dimensional (qudit) utilities ---------
+def generalized_gell_mann(d: int) -> list[Qobj]:
+    """Return an orthonormal (HS) set of traceless Hermitian generators for SU(d).
+
+    Constructs the standard generalized Gell-Mann matrices:
+    - Symmetric off-diagonal: |i><j| + |j><i|
+    - Anti-symmetric off-diagonal: -i|i><j| + i|j><i|
+    - Diagonal (d-1) traceless combinations.
+
+    Parameters
+    ----------
+    d : int
+        Dimension (>1).
+
+    Returns
+    -------
+    list[Qobj]
+        List of (d^2 - 1) traceless Hermitian Qobj with Tr(lambda_a lambda_b)=2 delta_{ab}.
+    """
+    if d <= 1:
+        raise ValueError("d must be > 1")
+
+    mats: list[Qobj] = []
+    zero = Qobj(np.zeros((d, d), dtype=complex))
+    # Off-diagonal: symmetric and anti-symmetric combinations of |i><j|
+    for i in range(d):
+        for j in range(i + 1, d):
+            eij = basis(d, i) * basis(d, j).dag()  # type: ignore
+            eji = basis(d, j) * basis(d, i).dag() # type: ignore
+            mats.append(eij + eji)                 # symmetric: |i><j| + |j><i|
+            mats.append(-1j * eij + 1j * eji)     # anti-symmetric: -i|i><j| + i|j><i|
+
+    # Diagonal traceless combinations: ∑_{r=0}^{k-1} |r><r| - k |k><k| for k=1..d-1
+    proj = lambda r: basis(d, r) * basis(d, r).dag() # type: ignore
+    for k in range(1, d):
+        diag = sum((proj(r) for r in range(k)), zero) - k * proj(k)
+        mats.append(diag)
+
+    # Normalize to Hilbert-Schmidt orthonormality Tr(lambda_a lambda_b)=2 δ_ab
+    normed: list[Qobj] = []
+    for M in mats:
+        trMM = (M * M).tr().real # type: ignore
+        if trMM <= 0:
+            raise ValueError("Encountered non-positive self inner product in generator construction.")
+        normed.append(M * np.sqrt(2.0 / trMM))
+
+    return normed
+
+def projector_to_qudit_bloch(P: Qobj, generators: Sequence[Qobj]) -> np.ndarray:
+    """Map a rank-1 projector P in C^d to its (d^2-1)-dimensional Bloch vector.
+
+    Uses the expansion  P = I/d + 1/2 * sum_a r_a lambda_a,  with Tr(lambda_a lambda_b)=2 delta_ab.
+    Returns r = [r_a].
+    """
+    d = P.shape[0]
+    I = qeye(d)
+    coeffs = []
+    for G in generators:
+        coeffs.append(((P - I/d) @ G).tr().real)
+    return np.array(coeffs, dtype=float)
+
+def bloch_vector_to_projector(r: np.ndarray, generators: Sequence[Qobj]) -> Qobj:
+    """Reconstruct a (candidate) rank-1 projector from Bloch vector components r.
+
+    Returns the Hermitian matrix  P = I/d + 1/2 * sum_a r_a lambda_a.
+    Caller should verify positivity / idempotence if needed.
+    """
+    r = np.asarray(r, dtype=float)
+    dimension = generators[0].dims[0]
+    d = 0
+    for dim in dimension:
+        d += dim  # type: ignore
+    if len(generators) != d*d - 1:
+        raise ValueError("Expected d^2-1 generators for d dimensional generators.")
+    if r.shape != (len(generators),):
+        raise ValueError("r must have length equal to number of generators or d^2-1 where d is the generator dimension.")
+    I = qeye(dimension)
+    P = I / d
+    for ra, G in zip(r, generators):
+        P = P + 0.5 * ra * G
+    return P
 
 def _is_hermitian_qobj(A: Qobj, atol: float = 1e-9) -> bool:
     return (A - A.dag()).norm() <= atol
@@ -280,9 +412,14 @@ class ClusteringToolkit:
     cm : CompatibilityMeasure | None
         CompatibilityMeasure instance used for noisy POVM generation and distance
         computations; if None a default instance will be created.
-    axes : sequence of 3-vectors | None
-        List of Bloch axes around which clusters are sampled. If None the
-        default axes [[1,0,0], [0,0,1]] are used.
+    mubs_array : sequence of int | None
+        Sequence of MUB indices to generate, length must be d+1 and values 1 or 0.
+        First index corresponds to computational basis, second to X basis, others to XZ^m.
+    dimensions : int
+        Dimension of the objects to cluster (used if `axes` is None).
+    splits : int
+        Number of Kraus operators to generate for noisy POVMs.
+
 
     Main methods
     ------------
@@ -294,8 +431,8 @@ class ClusteringToolkit:
     """
 
     def __init__(self, *, rng=None, cluster_method: str = "k-medoids", init: str = "kmeans++",
-                 n_points: int = 50, spread_angle: float = 22.5, cm: CompatibilityMeasure | None = None,
-                 axes: Sequence[Iterable[float]] | None = None, splits: int = 10):
+                 n_points: int = 100, spread_angle: float = 11.25, cm: CompatibilityMeasure | None = None,
+                 mubs_array: Sequence[int] = [1, 1, 0], dimensions: int = 2, splits: int = 10):
         """Instance-based clustering toolkit.
 
         Parameters added by request:
@@ -311,75 +448,119 @@ class ClusteringToolkit:
         self.splits = splits
         self.n_points = int(n_points)
         self.spread_angle = float(spread_angle)
+        self.mubs_array = np.asarray(mubs_array, dtype=int)
+        self.n_clusters = np.count_nonzero(self.mubs_array)
+        self.dimensions = dimensions
+        if dimensions != len(self.mubs_array) - 1:
+            raise ValueError("Length of mubs_array must be dimensions + 1.")
         if cm is None:
             self.cm = CompatibilityMeasure()
         else:
             self.cm = cm
-        if axes is None:
-            self.axes = [np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])]
-        else:
-            self.axes = [np.asarray(a, dtype=float) for a in axes]
 
-    # ----- Sampling -----
-    def sample_unit_vectors_cone_x(self, n: int = 50, spread_angle: float = 22.5, center: str = 'positive') -> np.ndarray:
-        """Sample `n` unit vectors in a cone about the +x axis.
+    def sample_qudit_povms_cone(self) -> list[list[Qobj]]:
+        """Approximate a "cone" around a basis by random small-unitary perturbations.
 
-        The cone opening is given by `spread_angle`. `center` controls whether the
-        cone is centered in the +x, -x, or both directions.
+        Implementation: For every set of basis projectors apply a random unitary
+        U = exp(i * ε H) with H a random traceless Hermitian (Gaussian) and ε sampled
+        uniformly in [0, θ], where θ = spread_angle (radians).
         """
-        if not (0.0 <= spread_angle <= 180.0):
+
+        theta = np.deg2rad(self.spread_angle)
+        base = generate_mubs(d = self.dimensions, mubs_array = list(self.mubs_array))
+        gens = generalized_gell_mann(self.dimensions)
+        pvms = []
+        for _ in range(self.n_points):
+            eps = self.rng.uniform(0.0, theta)
+            projs = []
+            for P in base:
+                # random traceless Hermitian H = sum_a c_a G_a with c_a ~ N(0,1)
+                coeffs = self.rng.normal(size=len(gens))
+                H = 0
+                for c, G in zip(coeffs, gens):
+                    H = H + c * G
+                # scale H to have Fro norm 1 then apply perturbation
+                fro = np.sqrt((H*H).tr().real)
+                if fro > 1e-14:
+                    H = (1.0/fro) * H
+                U = (1j * eps * H).expm()
+                Pp = U * P * U.dag()
+                # Re-project via leading eigenvector to keep it rank-1
+                v = Pp.eigenvalues()[np.argmax(Pp.eigenenergies)]
+                P_clean = v * v.dag() 
+                projs.append(P_clean)
+            pvms.append(projs)
+        return pvms
+    
+    # ----- Dataset preparation (instance-based) -----
+    def prepare_povm_dataset(self, *, etas: list[float] | None = None, spread_angle: float | None = None, cone_seeds: tuple[int, ...] | None = None, base_seed: int = 12345, noisy: bool = True) -> dict:
+        """Prepare POVM datasets (projective or isotropically noisy) around the instance's `axes`.
+
+        Parameters
+        ----------
+        etas : list[float] | None
+            Noise scaling factors; if None and `noisy` is False, uses [0.0].
+        spread_angle : float | None
+            Cone opening angle in degrees; if None uses ``self.spread_angle``.
+        cone_seeds : tuple[int, ...]
+            Seeds for per-axis cone samplers.
+        base_seed : int
+            Seed for base noise magnitudes.
+        noisy : bool
+            If True generate noisy POVMs; else projective POVMs.
+
+        Returns
+        -------
+        dict
+            Dataset with keys 'meta', 'pvms', 'per_eta'.
+        """
+        if noisy and (not etas):
+            raise ValueError("At least one eta must be provided for noisy dataset generation.")
+        etas = [0.0] if (etas is None) else list(etas)
+        spread_angle = float(self.spread_angle) if spread_angle is None else float(spread_angle)
+        if spread_angle < 0.0 or spread_angle > 180.0:
             raise ValueError("spread_angle must be in [0, 180].")
-        theta = np.deg2rad(spread_angle)
-        u = self.rng.uniform(np.cos(theta), 1.0, size=n)
-        beta = self.rng.uniform(0.0, 2*np.pi, size=n)
-        sin_alpha = np.sqrt(np.maximum(0.0, 1.0 - u*u))
-        v = np.column_stack((u, sin_alpha*np.cos(beta), sin_alpha*np.sin(beta)))
-        if center == 'negative':
-            v = -v
-        elif center == 'both':
-            signs = self.rng.choice([-1.0, 1.0], size=n)
-            v = v * signs[:, None]
-        elif center != 'positive':
-            raise ValueError("center must be one of {'positive','negative','both'}.")
-        return v
+        if cone_seeds is None:
+            cone_seeds = tuple(self.rng.integers(0, 2**31 - 1, size=self.n_clusters))
+        if len(cone_seeds) != self.n_clusters:
+            raise ValueError("Number of cone_seeds must match number of clusters/axes.")
+        pvms = self.sample_qudit_povms_cone()  # list of list of Qobj; length N
+        
+        rng = np.random.default_rng(base_seed)
+        base_Rl = rng.uniform(0.0, 1.0, size=len(pvms[0]))  # one base noise level per POVM element    
 
-    def sample_unit_vectors_cone(self, n=None, spread_angle=None, axis=None, rng=None):
-        """Sample `n` unit vectors in a cone around `axis`.
+        per_eta: dict[float, dict] = {}
+        for eta in etas:
+            lam_vec = (eta * base_Rl) if noisy else np.zeros_like(base_Rl)
+            noisy_kraus, noisy_E, noisy_arrays = [], [], []
+            if noisy:
+                for i, proj in enumerate(pvms):
+                    E_list, N_sets = self.noisy_povm_with_kraus(proj, lam=float(lam_vec[i]))
+                    noisy_kraus.append([K for N in N_sets for K in N])
+                    noisy_E.append(E_list)
+                    noisy_arrays.append([Ei.full() for Ei in E_list])
+            else:
+                for proj in pvms:
+                    noisy_kraus.append(proj)                      # trivial Kraus
+                    noisy_E.append(proj)
+                    noisy_arrays.append([Ei.full() for Ei in proj])
+            per_eta[float(eta)] = {
+                "lam_vec": lam_vec,
+                "noisy_kraus": noisy_kraus,                      # list[list[Qobj]]
+                "noisy_E": noisy_E,                              # list[list[Qobj]]
+                "noisy_E_array": np.asarray(noisy_arrays, dtype=complex)
+            }
 
-        Any of `n`, `spread_angle`, or `axis` can be omitted and will default to
-        the corresponding instance attributes: `self.n_points`,
-        `self.spread_angle`, and `self.axes[0]` respectively.
-        """
-        if n is None:
-            n = self.n_points
-        if spread_angle is None:
-            spread_angle = self.spread_angle
-        if axis is None:
-            axis = self.axes[0]
-        axis = np.asarray(axis, dtype=float)
-        axis /= np.linalg.norm(axis)
-        v_local = self.sample_unit_vectors_cone_x(n, spread_angle, center='positive')
-        x_axis = np.array([1.0, 0.0, 0.0])
-        if np.allclose(axis, x_axis):
-            return v_local
-        if np.allclose(axis, -x_axis):
-            return -v_local
-        rot_axis = np.cross(x_axis, axis); rot_axis /= np.linalg.norm(rot_axis)
-        angle = np.arccos(np.clip(np.dot(x_axis, axis), -1.0, 1.0))
-        K = np.array([[0, -rot_axis[2], rot_axis[1]],[rot_axis[2], 0, -rot_axis[0]],[-rot_axis[1], rot_axis[0], 0]])
-        R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
-        return v_local @ R.T
-
-    @staticmethod
-    def projective_qubit_povm_from_axis(n: Iterable[float]) -> List[Qobj]:
-        """Return the binary projective POVM aligned with Bloch vector `n`.
-
-        Returns two Qobj POVM elements [E+, E-] with E+ = (I + n·σ)/2.
-        """
-        n = _normalize_direction(np.asarray(n, dtype=float))
-        I = qeye(2)
-        n_dot_sigma = n[0] * _SIGMAS[0] + n[1] * _SIGMAS[1] + n[2] * _SIGMAS[2]
-        return [(I + n_dot_sigma) * 0.5, (I - n_dot_sigma) * 0.5]
+        return {
+            "meta": {
+                "spread_angle": spread_angle, "mubs_array": self.mubs_array.tolist(), 
+                "n_points": int(self.n_points),
+                "etas": [float(e) for e in etas], "cone_seeds": tuple(int(s) for s in cone_seeds),
+                "base_seed": int(base_seed), "noisy": bool(noisy)
+            },
+            "pvms": pvms,
+            "per_eta": per_eta
+        }
     
     def noisy_povm_with_kraus(self, P, lam, p=None, *, random_split=False, rng=None):
         """
@@ -667,88 +848,187 @@ class ClusteringToolkit:
     def _row_min_sqdist(self, X, C):
         return np.min(self._pair_sqdist(X, C), axis=1)
 
-    # ----- Dataset generation (instance-based) -----
-    def generate_noisy_dataset(self, n_clusters, *, etas: list[float] | None = None, n=None, spread_angle=None, methods=("kmeans","kmedoids","hdbscan"), cone_seeds=(42,43), base_seed=12345, noisy: bool = True):
-        """Generate POVM datasets (noisy or noiseless) sampled around the instance's `axes`.
+
+    # ----- Clustering attachment (distance-based) -----
+    def cluster_povm_dataset(self, dataset: dict, *, n_clusters: int,
+                            methods: tuple[str, ...] = ("kmeans", "kmedoids", "hdbscan")) -> dict:
+        """Attach incompatibility distances and clustering labels to a prepared dataset.
 
         Parameters
         ----------
-        etas : iterable of float
-            Noise scaling factors for which noisy datasets will be generated.
+        dataset : dict
+            Output of `prepare_povm_dataset`.
         n_clusters : int
-            Number of clusters to request when clustering the distance matrix.
-        n : int, optional
-            Total number of samples; if None ``2 * self.n_points`` is used.
-        spread_angle : float, optional
-            Cone opening angle in degrees; if None ``self.spread_angle`` is used.
-        methods : tuple[str], optional
-            Which clustering methods to run for each eta.
-        cone_seeds : tuple[int], optional
-            Seeds used to initialize cone samplers per axis for reproducibility.
-        base_seed : int, optional
-            Seed used to construct the base randomness for noise vectors.
-        noisy : bool, optional
-            If True (default) generate noisy POVMs using the isotropic-noise model.
-            If False, generate noiseless/projective POVMs (lam_vec will be zeros).
+            Target number of clusters for partitioning methods.
+        methods : tuple[str, ...]
+            Clustering methods to run via `self.cluster_from_distance`.
 
         Returns
         -------
         dict
-            A dictionary with keys 'meta', 'vectors', and 'per_eta'. The
-            'per_eta' sub-dictionary maps each eta to a dict containing the
-            lam_vec, noisy_E (array of POVM matrices), pairwise D and
-            the clustering labels for each requested method.
+            The input dataset augmented in-place with 'D' and 'labels' per eta.
         """
-        if noisy and (etas is None or len(etas) == 0):
-            raise ValueError("At least one eta must be provided for noisy dataset generation.")
-        else:
-            etas = [0.0] if etas is None else etas
-        if n is None:
-            n = 2 * self.n_points
-        if spread_angle is None:
-            spread_angle = self.spread_angle
-
-        # sample cones around each axis stored in self.axes
-        if len(self.axes) < 2:
-            raise ValueError("At least two axes must be provided in self.axes to generate a two-cluster dataset.")
-        n_per_cluster = int(n // len(self.axes))
-        vecs = []
-        # allow deterministic cone seeds for reproducibility
-        seeds = list(cone_seeds)
-        for idx, ax in enumerate(self.axes):
-            seed = seeds[idx] if idx < len(seeds) else None
-            local_tool = ClusteringToolkit(rng=seed, n_points=n_per_cluster, spread_angle=spread_angle, cm=self.cm, axes=self.axes)
-            v = local_tool.sample_unit_vectors_cone(n_per_cluster, spread_angle, ax)
-            v /= np.linalg.norm(v, axis=1, keepdims=True)
-            vecs.append(v)
-        all_vectors = np.vstack(vecs)
-        proj_povms = [self.projective_qubit_povm_from_axis(all_vectors[i]) for i in range(all_vectors.shape[0])]
-        rng = np.random.default_rng(base_seed)
-        base_Rl = rng.uniform(0.0, 1.0, size=all_vectors.shape[0])
-        out = {"meta": {"spread_angle": float(spread_angle), "n": int(all_vectors.shape[0]), "etas": list(map(float, etas)), "cone_seeds": tuple(map(int, cone_seeds)), "base_seed": int(base_seed), "axes": [list(a) for a in self.axes], "noisy": bool(noisy)}, "vectors": all_vectors, "per_eta": {}}
-        for eta in etas:
-            if noisy:
-                lam_vec = eta * base_Rl
-            else:
-                lam_vec = np.zeros_like(base_Rl)
-            noisy_kraus = []
-            noisy_arrays = []
-            if noisy:
-                for i, proj in enumerate(proj_povms):
-                    E, N = self.noisy_povm_with_kraus(proj, lam=float(lam_vec[i]))
-                    noisy_kraus.append([K for Ni in N for K in Ni])
-                    noisy_arrays.append([Ei.full() for Ei in E])
-            else:
-                for i, proj in enumerate(proj_povms):
-                    E = N = proj  # projective (noiseless) POVM
-                    noisy_kraus.append(E)  # each Ni has one element
-                    noisy_arrays.append([Ei.full() for Ei in E])
-            D = self.cm.incompatibility_distance_matrix(noisy_kraus)
+        if "per_eta" not in dataset:
+            raise ValueError("Dataset missing 'per_eta'. Pass the output of prepare_povm_dataset.")
+        for eta_key, blob in dataset["per_eta"].items():
+            D = self.cm.incompatibility_distance_matrix(blob["noisy_kraus"])
             labels = {m: self.cluster_from_distance(D, n_clusters=n_clusters, method=m) for m in methods}
-            out["per_eta"][float(eta)] = {"lam_vec": lam_vec, "noisy_E": np.asarray(noisy_arrays, dtype=complex), "D": D, "labels": labels}
-        return out
+            blob["D"], blob["labels"] = D, labels
+        return dataset
 
-    def save_noisy_dataset(self, dataset, path_npz="Plots&Data/MLQS/noisy_obs_dataset.npz", path_pkl="Plots&Data/MLQS/noisy_obs_dataset.pkl"):
+    # ----- Evaluation histogram (cluster accuracy per ordered block) -----
+    def plot_cluster_accuracy_hist(self, dataset: dict, *, n_clusters: int, method: str,
+                                etas: list[float] | None = None, annotate: bool = True) -> dict[float, np.ndarray]:
+        """Plot, for each eta, a histogram (n_clusters bars) of % correctly clustered POVMs per ordered block.
+
+        Logic
+        -----
+        For a given eta, take the list order of instances (noisy_kraus). Partition it into `n_clusters`
+        consecutive, equal-size blocks. For each block, find the majority cluster label assigned by `method`
+        and report the fraction (in %) of instances in that block carrying that majority label. Bars are
+        in the existing order of blocks. One histogram is produced per eta.
+
+        Parameters
+        ----------
+        dataset : dict
+            Output of `prepare_povm_dataset` (and then `cluster_povm_dataset`).
+        n_clusters : int
+            Number of desired equal-size blocks and the number of bars in the histogram.
+        method : str
+            Key inside dataset['per_eta'][eta]['labels'][method] to use (e.g., "kmeans", "kmedoids", "hdbscan").
+        etas : list[float] | None
+            Which eta values to plot. If None, uses all etas present in dataset (sorted numerically).
+        annotate : bool
+            If True, writes the percentage value above each bar.
+
+        Returns
+        -------
+        dict[float, np.ndarray]
+            Mapping eta -> array of shape (n_clusters,) with the percentages per block.
+        """
+        if "per_eta" not in dataset:
+            raise ValueError("Dataset missing 'per_eta'. Pass the output of prepare_povm_dataset/cluster_povm_dataset.")
+
+        # resolve eta list in numeric sorted order
+        per_eta = dataset["per_eta"]
+        if etas is None:
+            eta_list = sorted([float(k) for k in per_eta.keys()])
+        else:
+            # keep user-provided order but check existence
+            eta_list = []
+            for e in etas:
+                # find matching key robustly
+                key = next((k for k in per_eta if abs(float(k) - float(e)) < 1e-12), None)
+                if key is None:
+                    raise KeyError(f"eta={e} not found in dataset['per_eta'].")
+                eta_list.append(float(key))
+
+        results: dict[float, np.ndarray] = {}
+
+        for e in eta_list:
+            # resolve stored key (string/float) robustly
+            k_store = next(k for k in per_eta if abs(float(k) - e) < 1e-12)
+            blob = per_eta[k_store]
+
+            if "labels" not in blob or method not in blob["labels"]:
+                raise KeyError(f"Labels for method='{method}' not found at eta={e}. Run cluster_povm_dataset first.")
+            labels = np.asarray(blob["labels"][method])
+            N = labels.shape[0]
+
+            # enforce equal-size partition
+            if N % n_clusters != 0:
+                raise ValueError(f"Cannot partition {N} instances into {n_clusters} equal blocks (remainder {N % n_clusters}).")
+            m = N // n_clusters
+
+            pct = np.zeros(n_clusters, dtype=float) # percentage per block
+            for g in range(n_clusters):
+                sl = slice(g * m, (g + 1) * m)
+                block = labels[sl]
+                vals, counts = np.unique(block, return_counts=True)
+                maj = vals[np.argmax(counts)]
+                correct = np.count_nonzero(block == maj)
+                pct[g] = 100.0 * correct / m
+            results[e] = pct
+
+            # --- plotting: one histogram per eta ---
+            fig, ax = plt.subplots()
+            x = np.arange(n_clusters)
+            bars = ax.bar(x, pct, width=0.8)
+            ax.set_ylim(0.0, 100.0)
+            ax.set_xticks(x)
+            ax.set_xlabel("Ordered block index")
+            ax.set_ylabel("Correctly clustered (%)")
+            ax.set_title(f"Cluster accuracy per block  |  eta={e}  |  method={method}")
+            if annotate:
+                for rect, val in zip(bars, pct):
+                    ax.text(rect.get_x() + rect.get_width()/2.0, val + 1.0, f"{val:.1f}%", ha="center", va="bottom", fontsize=9)
+            fig.tight_layout()
+
+        return results
+
+    # ----- Visualizing higher dimensional POVMs (Bloch-slice rendering) -----
+    def plot_povms(self, dataset: dict, *, eta: float,
+                which_instances: slice | list[int] | None = None,
+                subspace_pairs: list[tuple[int, int]] | None = None):
+        """Render POVM effects on Bloch spheres (qubit) or SU(2) subspace slices (qudit).
+
+        Parameters
+        ----------
+        dataset : dict
+            Output of `prepare_povm_dataset`.
+        eta : float
+            Which noise scale to visualize.
+        which_instances : slice | list[int] | None
+            Subset of instances to plot; default plots all.
+        subspace_pairs : list[tuple[int,int]] | None
+            For d>2, list of level pairs (i,j) defining 2D subspaces to render.
+
+        Returns
+        -------
+        Bloch | list[Bloch]
+            A Bloch object (d=2) or a list of Bloch objects (one per (i,j) slice).
+        """
+        # resolve eta key robustly
+        per_eta = dataset["per_eta"]
+        eta_key = next((k for k in per_eta if abs(float(k) - float(eta)) < 1e-12), None)
+        if eta_key is None:
+            raise KeyError(f"eta={eta} not in dataset['per_eta'].")
+
+        povms = per_eta[eta_key]["noisy_E"]
+        N, d = len(povms), povms[0][0].shape[0]
+        idxs = range(N) if which_instances is None else (range(N)[which_instances] if isinstance(which_instances, slice) else which_instances)
+
+        def _bloch_vec_2x2(E2: Qobj) -> np.ndarray:
+            tr = E2.tr()
+            if abs(tr) < 1e-15: return np.zeros(3)
+            rho = (E2 / tr + (E2 / tr).dag()) * 0.5
+            return np.array([(rho * sigmax()).tr().real, (rho * sigmay()).tr().real, (rho * sigmaz()).tr().real]) # type: ignore
+
+        def _proj_to_ij(E: Qobj, i: int, j: int) -> Qobj:
+            P = Qobj(np.vstack([basis(d, i).full().T, basis(d, j).full().T]))  # 2×d
+            return 0.5 * (P * E * P.dag() + (P * E * P.dag()).dag()) # type: ignore
+
+        if d == 2:
+            b = Bloch()
+            for k in idxs:
+                for Ei in povms[k]:
+                    b.add_points(_bloch_vec_2x2(Ei))
+            b.make_sphere()
+            return b
+
+        if not subspace_pairs:
+            raise ValueError("For d>2, provide subspace_pairs=[(i,j), ...] to define SU(2) slices.")
+        outs = []
+        for (i, j) in subspace_pairs:
+            b = Bloch()
+            for k in idxs:
+                for Ei in povms[k]:
+                    b.add_points(_bloch_vec_2x2(_proj_to_ij(Ei, i, j)))
+            b.make_sphere()
+            outs.append(b)
+        return outs
+
+    def save_dataset(self, dataset, path_npz="Plots&Data/MLQS/noisy_obs_dataset.npz", path_pkl="Plots&Data/MLQS/noisy_obs_dataset.pkl"):
         os.makedirs(os.path.dirname(path_npz), exist_ok=True)
         meta = dataset["meta"]
         etas = sorted(dataset["per_eta"].keys())
