@@ -1,0 +1,26 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "Set-Location": true,
+        "pdflatex": true,
+        "latexmk": true,
+        "C:/Users/sabar/anaconda3/envs/p-qlif/python.exe": true
+    },
+    "latex-workshop.linting.enabled": true,
+    "latex-workshop.linting.run": "onType",
+    "latex-workshop.linting.chktex.enabled": false,
+    "latex-workshop.linting.chktex.args": [
+        "-q",
+        "-n",
+        "all"
+    ],
+
+    "texlab.chktex.onOpenAndSave": false,
+    "texlab.chktex.onEdit": false,
+    "texlab.diagnostics.ignoredPatterns": [
+        "\\[chktex\\]"
+    ],
+    "latex-workshop.linting.chktex.convertOutput.column.enabled": false,
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.pythonProjects": []
+}

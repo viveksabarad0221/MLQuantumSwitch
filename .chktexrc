@@ -1,0 +1,7 @@
+# Project-local ChkTeX configuration
+# Goal: keep other linting, but silence ChkTeX diagnostics in editors.
+
+CmdLine {
+  -q
+  -n all
+}

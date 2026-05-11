@@ -4,5 +4,14 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"Set-Location": true,
+			"pdflatex": true,
+			"latexmk": true,
+			"C:/Users/sabar/anaconda3/envs/p-qlif/python.exe": true
+		},
+		"python-envs.defaultEnvManager": "ms-python.python:conda",
+		"python-envs.defaultPackageManager": "ms-python.python:conda"
+	}
 }
