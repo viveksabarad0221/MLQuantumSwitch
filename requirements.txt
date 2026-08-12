@@ -1,15 +1,51 @@
 # Core dependencies
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.7
 qutip>=5.0.0
 jupyterlab>=3.0
 
 # Optional (uncomment if you want kernel SVM benchmarks)
-# scikit-learn>=1.3
+scikit-learn>=1.3
 
 # Optional (uncomment if you want SDP-based channel compatibility labels)
-# cvxpy>=1.4
+cvxpy>=1.4
 
 # Optional (uncomment if you want HDBSCAN clustering)
 # hdbscan>=0.8.37
+
+# package management
+pip
+wheel
+
+# numerics
+numpy
+scipy
+matplotlib
+lmfit
+numexpr
+pandas
+numba
+pydantic
+
+# adapters
+libusb
+pyft232
+pyserial >= 3.0             # for pyft232
+pyvisa-py
+pyusb >= 1.0.0, != 1.2.0    # for pyft232
+pyro5
+requests
+sockets
+python-vxi11
+websocket
+websocket-client
+psutil
+zeroconf
+
+# devices
+ThorlabsPM100
+LabJackPython
+pylablib-lightweight                                                # only lightweight to avoid gui
+pythonnet; platform_system == "Windows"                             # only compatible with Windows
+elliptec @ git+https://github.com/rwpeterson/elliptec@master        # repo provided by Robert Peterson
+
+# usability
+termcolor
