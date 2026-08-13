@@ -305,6 +305,6 @@ for i in range(0,len(wp)):
     if saveplot:
         plotsavename=wpname
         print('saving ' + plotsavename)
-        plt.savefig(plotsavename+'.pdf', format="pdf",transparent=True, bbox_inches='tight', pad_inches=0)
-        plt.savefig(plotsavename+'.png', format="png",transparent=True, bbox_inches='tight', pad_inches=0)
+        plt.savefig(plotsavename+'.pdf', format="pdf", bbox_inches='tight', pad_inches=0)
+        plt.savefig(plotsavename+'.png', format="png", bbox_inches='tight', pad_inches=0)
         plt.show()
