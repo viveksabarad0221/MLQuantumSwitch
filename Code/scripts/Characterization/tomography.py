@@ -89,13 +89,13 @@ def parse_args():
     parser.add_argument('--addr-hwp1', type=str, default='0', help='Elliptec address of HWP1 (state prep)')
     parser.add_argument('--addr-qwp0', type=str, default='1', help='Elliptec address of QWP0 (analysis)')
     parser.add_argument('--addr-hwp0', type=str, default='2', help='Elliptec address of HWP0 (analysis)')
-    parser.add_argument('--cal-hwp1', type=float, default=0.0,
+    parser.add_argument('--cal-hwp1', type=float, default=132.42,
                         help='Calibration offset [deg] added to HWP1 angle (fast-axis zero from prior characterization)')
-    parser.add_argument('--cal-qwp0', type=float, default=0.0,
+    parser.add_argument('--cal-qwp0', type=float, default=90.01,
                         help='Calibration offset [deg] added to QWP0 angles')
-    parser.add_argument('--cal-hwp0', type=float, default=0.0,
+    parser.add_argument('--cal-hwp0', type=float, default=75.30,
                         help='Calibration offset [deg] added to HWP0 angles')
-    parser.add_argument('--hwp1-angle', type=float, default=None, required=True,
+    parser.add_argument('-s', '--hwp1-angle', type=float, default=None, required=True,
                         help='Fixed HWP1 angle [deg] setting the input polarization for this run')
     parser.add_argument('--repeats', type=int, default=5, help='Number of powermeter readings averaged per basis setting')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move, before reading')
