@@ -86,23 +86,19 @@ def parse_args():
                         help='Serial number of powermeter (Windows only)')
     parser.add_argument('-d', '--motor-device', type=str, default='',
                         help='Serial device path for the elliptec bus (HWP1, QWP0, HWP0 daisy-chained on it)')
+    parser.add_argument('-s', '--hwp1-angle', type=float, default=None, required=True,
+                        help='Fixed HWP1 angle [deg] setting the input polarization for this run')
     parser.add_argument('--addr-hwp1', type=str, default='0', help='Elliptec address of HWP1 (state prep)')
     parser.add_argument('--addr-qwp0', type=str, default='1', help='Elliptec address of QWP0 (analysis)')
     parser.add_argument('--addr-hwp0', type=str, default='2', help='Elliptec address of HWP0 (analysis)')
     parser.add_argument('--cal-hwp1', type=float, default=132.42,
                         help='Calibration offset [deg] added to HWP1 angle (fast-axis zero from prior characterization)')
-    parser.add_argument('--cal-qwp0', type=float, default=90.01,
+    parser.add_argument('--cal-qwp0', type=float, default=42.96,
                         help='Calibration offset [deg] added to QWP0 angles')
-    parser.add_argument('--cal-hwp0', type=float, default=75.30,
+    parser.add_argument('--cal-hwp0', type=float, default=62.42,
                         help='Calibration offset [deg] added to HWP0 angles')
-    parser.add_argument('-s', '--hwp1-angle', type=float, default=None, required=True,
-                        help='Fixed HWP1 angle [deg] setting the input polarization for this run')
     parser.add_argument('--repeats', type=int, default=5, help='Number of powermeter readings averaged per basis setting')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move, before reading')
-    parser.add_argument('--move-timeout', type=float, default=6.0,
-                        help='Serial read timeout [s] while waiting for a move-complete reply from the elliptec bus. '
-                             'Must comfortably exceed the slowest single-axis rotation, or moveabsolute() will '
-                             'time out mid-move and resend the command, desyncing the reply stream.')
     parser.add_argument('--pm-average-count', type=int, default=100, help='Powermeter hardware averaging count')
     parser.add_argument('--dark', type=float, default=0.0, help='Dark/background power [mW] subtracted from each reading')
     parser.add_argument('--no-plot', action='store_true', help='Skip the Poincare-sphere plot')
@@ -214,10 +210,6 @@ def main():
     addrs = [args.addr_hwp1, args.addr_qwp0, args.addr_hwp0]
     print(f'Connecting to elliptec bus on {args.motor_device}, addresses {addrs} ...')
     dev = elliptec.Elliptec(dev=args.motor_device, addrs=addrs, home=True, freq=True)
-    # elliptec.py hardcodes this to 2s after init, which can be shorter than a
-    # real move -- moveabsolute() would then time out mid-rotation and resend
-    # the command, desyncing the reply stream. Widen it for the whole sweep.
-    dev.ser.timeout = args.move_timeout
 
     print(f'Setting HWP1 (state prep) to {args.hwp1_angle} deg (+ {args.cal_hwp1} deg calibration) ...')
     move_and_settle(dev, args.addr_hwp1, args.hwp1_angle + args.cal_hwp1, args.settle)
