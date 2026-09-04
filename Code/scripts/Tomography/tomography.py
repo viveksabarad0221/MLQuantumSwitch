@@ -164,34 +164,24 @@ def stokes_and_density_matrix(power):
 
 
 def plot_poincare(sx, sy, sz, savepath_base):
+    # (sx, sy, sz) poles: +x=D/-x=A, +y=L/-y=R, +z=H/-z=V (see
+    # stokes_and_density_matrix). qutip.Bloch draws the sphere and places
+    # pole labels itself, so there's no hand-coded text position to get
+    # wrong (which is what caused the earlier D/A-vs-L/R-vs-H/V mixup).
     import matplotlib.pyplot as plt
+    from qutip import Bloch
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    u, v = numpy.mgrid[0:2 * numpy.pi:40j, 0:numpy.pi:20j]
-    xs = numpy.cos(u) * numpy.sin(v)
-    ys = numpy.sin(u) * numpy.sin(v)
-    zs = numpy.cos(v)
-    ax.plot_wireframe(xs, ys, zs, color='lightgray', linewidth=0.5, alpha=0.5)
-
-    ax.scatter([sx], [sy], [sz], color='red', s=60, depthshade=False)
-    ax.plot([0, sx], [0, sy], [0, sz], color='red', linewidth=1.5)
-
-    ax.text(0, 0, 1.15, 'L', ha='center')
-    ax.text(0, 0, -1.15, 'R', ha='center')
-    ax.text(1.15, 0, 0, 'D', ha='center')
-    ax.text(-1.15, 0, 0, 'A', ha='center')
-    ax.text(0, 1.15, 0, 'H', ha='center')
-    ax.text(0, -1.15, 0, 'V', ha='center')
-
-    ax.set_xlabel('Sx (D/A)')
-    ax.set_ylabel('Sy (L/R)')
-    ax.set_zlabel('Sz (H/V)')
-    ax.set_box_aspect([1, 1, 1])
-    fig.tight_layout()
-    plt.savefig(savepath_base + '.pdf', format='pdf', bbox_inches='tight', pad_inches=0)
-    plt.savefig(savepath_base + '.png', format='png', bbox_inches='tight', pad_inches=0)
+    b = Bloch()
+    b.xlabel = ['D', 'A']
+    b.ylabel = ['L', 'R']
+    b.zlabel = ['H', 'V']
+    b.vector_color = ['r']
+    b.add_vectors([sx, sy, sz])
+    b.render()
+    b.fig.savefig(savepath_base + '.pdf', bbox_inches='tight', pad_inches=0.1)
+    b.fig.savefig(savepath_base + '.png', bbox_inches='tight', pad_inches=0.1)
+    # b.show() alone doesn't block, so a plain `python script.py` run would
+    # exit (and close the window) before you get a chance to drag-rotate it.
     plt.show()
 
 
