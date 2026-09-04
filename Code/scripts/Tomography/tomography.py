@@ -51,6 +51,8 @@ import os
 import sys
 import time
 
+sys.path.insert(0, 'C:\\Users\\Kalvarienberg\\OneDrive\\Desktop\\MLQS\\MLQuantumSwitch\\Code\\scripts\\Characterization\\')
+
 import numpy
 import elliptec
 from elliptec import ReportedError
@@ -66,7 +68,7 @@ BASES = [
     ("H", 0.0, 0.0),
     ("V", 0.0, 45.0),
     ("A", 45.0, 67.5),
-    ("R", 45.0, 45.0),
+    ("R", 135.0, 0.0),
 ]
 
 PAULI_X = numpy.array([[0, 1], [1, 0]], dtype=complex)
