@@ -3,6 +3,9 @@
 
 """Single-qubit polarization state tomography with a single detector.
 
+Follows James, Kwiat, Munro & White, "Measurement of qubits",
+Phys. Rev. A 64, 052312 (2001), Sec. II.A, Eq. (2.1)-(2.3).
+
 Setup (order along the beam path):
 
     collimator -> PBS -> HWP1 -> QWP0 -> HWP0 -> PBS -> powermeter
@@ -11,27 +14,28 @@ Setup (order along the beam path):
 
 HWP1 is held at a fixed, user-specified angle for the whole run: it just
 sets the input polarization once. QWP0 and HWP0 are then stepped through
-six settings while the powermeter reads the PBS transmission port. The
-reflection port is not monitored (only one detector is available), which
-is why this is "slightly different" from a two-detector scheme -- but it
-turns out not to matter: with the analysis waveplates in front of a
-polarizer that always transmits |H>, the measured power for a given
-(q, h) setting of (QWP0, HWP0) is
+four settings while the powermeter reads the PBS transmission port. With
+the analysis waveplates in front of a polarizer that always transmits
+|H>, the measured power for a given (q, h) setting of (QWP0, HWP0) is
 
     P(q, h)  ~  |<H| HWP0(h) QWP0(q) |psi>|^2
 
 which is exactly a projective measurement onto some target state |t>,
 provided HWP0(h) QWP0(q) |t> = |H> (up to a global phase). Working that
-out with Jones calculus for six target states gives the settings in
-BASES below. Because opposite bases are complementary
-(I_H + I_V = I_D + I_A = I_L + I_R = total flux, up to non-idealities),
-the Stokes vector can be recovered from these six single-port readings
-without ever needing the reflection port.
+out with Jones calculus for the paper's four target states (H, V, the
+45 deg state (|H>-|V>)/sqrt(2), and R) gives the settings in BASES below.
+
+The paper's n0 is obtained with a 50%-transmission, polarization-
+independent filter: n0 = (N/2)(<H|rho|H> + <V|rho|V>). We don't have
+such a filter, so per Eq. (2.1) we get the same quantity by measuring H
+and V separately and averaging: n0 = (n_H + n_V) / 2. That is the only
+difference from the paper.
 
 Convention used throughout:
     |H> = (1, 0),  |V> = (0, 1)
     |D> = (|H> + |V>) / sqrt(2),   |A> = (|H> - |V>) / sqrt(2)
     |R> = (|H> - i|V>) / sqrt(2),  |L> = (|H> + i|V>) / sqrt(2)
+The paper's 45 deg state |Dbar> = (|H> - |V>)/sqrt(2) is our |A>.
 
 Only the analysis stage (QWP0, HWP0) is swept here. HWP1 is moved once
 at the start and left alone -- this file is meant to validate the
@@ -55,13 +59,13 @@ from ThorlabsPM100 import ThorlabsPM100, USBTMC
 # --------------------------------------------------------------------------
 # Analysis settings: (label, QWP0 angle q [deg], HWP0 angle h [deg])
 # Derived by requiring HWP0(h) @ QWP0(q) |target> = |H> (up to phase).
+# These are the four projections of paper Eq. (2.1): H, V, Dbar (45 deg,
+# our A), and R.
 # --------------------------------------------------------------------------
 BASES = [
     ("H", 0.0, 0.0),
     ("V", 0.0, 45.0),
-    ("D", 45.0, 22.5),
     ("A", 45.0, 67.5),
-    ("L", 45.0, 0.0),
     ("R", 45.0, 45.0),
 ]
 
@@ -129,21 +133,29 @@ def read_power_mw(pm, repeats, dark):
 
 
 def stokes_and_density_matrix(power):
-    # power: dict label -> mean power [mW]
-    s0_hv = power["H"] + power["V"]
-    s0_da = power["D"] + power["A"]
-    s0_lr = power["L"] + power["R"]
-    s0 = (s0_hv + s0_da + s0_lr) / 3.0
+    # power: dict label -> mean power [mW]. Paper Eq. (2.1), with n0 (normally a 50% filter reading) replaced by (n_H + n_V) / 2.
+    n0 = (power["H"] + power["V"]) / 2.0
+    n1 = power["H"]
+    n2 = power["A"]  # paper's Dbar = (|H>-|V>)/sqrt(2)
+    n3 = power["R"]
 
-    sz = (power["H"] - power["V"]) / s0
-    sx = (power["D"] - power["A"]) / s0
-    sy = (power["L"] - power["R"]) / s0
+    # Paper Eq. (2.2)
+    s0 = 2 * n0
+    s1 = 2 * (n1 - n0)
+    s2 = 2 * (n2 - n0)
+    s3 = 2 * (n3 - n0)
 
+    sz = s1 / s0 
+    sx = -s2 / s0
+    sy = -s3 / s0
+
+    # Paper Eq. (2.3): rho = 1/2 sum_i (S_i/S0) sigma_i (in the |R> / |L> basis), expressed here in the |H>,|V> basis (sigma_1->PAULI_Z, sigma_2->-PAULI_X, sigma_3->-PAULI_Y).
     rho = 0.5 * (IDENT + sx * PAULI_X + sy * PAULI_Y + sz * PAULI_Z)
     purity = 0.5 * (1 + sx**2 + sy**2 + sz**2)
     eigvals = numpy.linalg.eigvalsh(rho)
     return {
-        "s0_hv": s0_hv, "s0_da": s0_da, "s0_lr": s0_lr, "s0": s0,
+        "n0": n0, "n1": n1, "n2": n2, "n3": n3,
+        "s0": s0, "s1": s1, "s2": s2, "s3": s3,
         "sx": sx, "sy": sy, "sz": sz,
         "rho": rho, "purity": purity, "eigvals": eigvals,
     }
@@ -261,9 +273,9 @@ def main():
     result = stokes_and_density_matrix(power)
 
     print()
-    print(f'S0 (H+V / D+A / L+R): {result["s0_hv"]:.4f} / {result["s0_da"]:.4f} / {result["s0_lr"]:.4f} mW '
-          f'(consistency check -- should roughly agree)')
-    print(f'Stokes vector: Sx={result["sx"]:.4f}  Sy={result["sy"]:.4f}  Sz={result["sz"]:.4f}')
+    print(f'n0={result["n0"]:.4f}  n1={result["n1"]:.4f}  n2={result["n2"]:.4f}  n3={result["n3"]:.4f} mW')
+    print(f'Stokes vector: S0={result["s0"]:.4f}  S1={result["s1"]:.4f}  S2={result["s2"]:.4f}  S3={result["s3"]:.4f}')
+    print(f'Normalized: Sx={result["sx"]:.4f}  Sy={result["sy"]:.4f}  Sz={result["sz"]:.4f}')
     print(f'Purity Tr(rho^2) = {result["purity"]:.4f}  (1.0 = pure state, 0.5 = maximally mixed)')
     print(f'rho eigenvalues: {result["eigvals"]}')
     print('rho =')
@@ -275,8 +287,9 @@ def main():
         'calibration_deg': {'hwp1': args.cal_hwp1, 'qwp0': args.cal_qwp0, 'hwp0': args.cal_hwp0},
         'power_mW': power,
         'power_std_mW': power_std,
+        'n_mW': {'n0': result['n0'], 'n1': result['n1'], 'n2': result['n2'], 'n3': result['n3']},
+        'stokes_unnormalized': {'s0': result['s0'], 's1': result['s1'], 's2': result['s2'], 's3': result['s3']},
         'stokes': {'sx': result['sx'], 'sy': result['sy'], 'sz': result['sz']},
-        's0_check_mW': {'hv': result['s0_hv'], 'da': result['s0_da'], 'lr': result['s0_lr']},
         'purity': result['purity'],
         'rho_real': result['rho'].real.tolist(),
         'rho_imag': result['rho'].imag.tolist(),
