@@ -67,8 +67,8 @@ from ThorlabsPM100 import ThorlabsPM100, USBTMC
 BASES = [
     ("H", 0.0, 0.0),
     ("V", 0.0, 45.0),
-    ("A", 45.0, 67.5),
-    ("R", 45.0, 0.0),
+    ("A", -45.0, 67.5),
+    ("R", -45.0, 0.0),
 ]
 
 PAULI_X = numpy.array([[0, 1], [1, 0]], dtype=complex)
@@ -99,9 +99,9 @@ def parse_args():
     parser.add_argument('--addr-hwp0', type=str, default='2', help='Elliptec address of HWP0 (analysis)')
     parser.add_argument('--cal-hwp1', type=float, default=132.42,
                         help='Calibration offset [deg] added to HWP1 angle (fast-axis zero from prior characterization)')
-    parser.add_argument('--cal-qwp0', type=float, default=218.90,
+    parser.add_argument('--cal-qwp0', type=float, default=37.85, #default=38.93, #37.8 (from polarimeter), 38.93 (from characterization plot)
                         help='Calibration offset [deg] added to QWP0 angles')
-    parser.add_argument('--cal-hwp0', type=float, default=147.77,
+    parser.add_argument('--cal-hwp0', type=float, default=57.35, #default=57.77, #57.35 (from polarimeter), 57.77 (from characterization plot)
                         help='Calibration offset [deg] added to HWP0 angles')
     parser.add_argument('--repeats', type=int, default=5, help='Number of powermeter readings averaged per basis setting')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move, before reading')
