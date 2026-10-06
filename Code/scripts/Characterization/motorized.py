@@ -6,8 +6,6 @@
 """To characterize waveplates or polarizers"""
 """In motorized rotation mount (PCBMotors or Thorlabs Elliptec)"""
 
-import sys
-sys.path.append('C:\\Users\\Kalvarienberg\\OneDrive\\Desktop\\MLQS\\MLQuantumSwitch\\Code\\scripts\\Characterization\\')
 import elliptec
 from elliptec import ReportedError
 import argparse
@@ -19,6 +17,7 @@ import csv
 import numpy, scipy.optimize
 from scipy.signal import argrelmax
 import matplotlib.pyplot as plt
+import sys
 
 OPTIC_LABELS = {'hwp': 'Half-wave plate', 'qwp': 'Quarter-wave plate', 'polarizer': 'Polarizer'}
 
