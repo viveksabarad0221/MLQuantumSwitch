@@ -1,0 +1,98 @@
+[   0.067s] python 3.14.6 on win32; argv = ['c:/Users/Kalvarienberg/OneDrive/Desktop/MLQS/MLQuantumSwitch/Code/scripts/Tomography/debug_motor_moves.py', '-d', 'COM5', '-s', '22.5', '--identify', '--raw']
+[   0.067s] elliptec imported from:   C:\Users\Kalvarienberg\OneDrive\Desktop\MLQS\MLQuantumSwitch\Code\scripts\Characterization\elliptec.py
+[   0.067s] tomography imported from: c:\Users\Kalvarienberg\OneDrive\Desktop\MLQS\MLQuantumSwitch\Code\scripts\Tomography\tomography.py
+[   0.067s] === init: elliptec.Elliptec(home=True, freq=True), as in tomography.py ===
+[   0.086s]   TX '0in'
+[   0.132s]   RX '0IN0E1140000420221501016800023000\r\n'
+[   0.132s]   TX '0s1'
+[   4.132s]   RX '0GS00\r\n'
+[   4.132s]   TX '0s2'
+[   7.379s]   RX '0GS00\r\n'
+[   7.380s]   TX '0ho0'
+[   8.404s]   RX '0PO00000001\r\n'
+[   8.404s]   TX '1in'
+[   8.468s]   RX '1IN0E1140063420231701016800023000\r\n'
+[   8.468s]   TX '1s1'
+[  12.484s]   RX '1GS00\r\n'
+[  12.484s]   TX '1s2'
+[  15.747s]   RX '1GS00\r\n'
+[  15.748s]   TX '1ho0'
+[  17.235s]   RX '1PO00000003\r\n'
+[  17.236s]   TX '2in'
+[  17.331s]   RX '2IN0E1140091120211501016800023000\r\n'
+[  17.331s]   TX '2s1'
+[  21.379s]   RX '2GS00\r\n'
+[  21.379s]   TX '2s2'
+[  24.659s]   RX '2GS00\r\n'
+[  24.659s]   TX '2ho0'
+[  26.083s]   RX '2POFFFFFFFF\r\n'
+[  26.089s]   HWP1: addr 0  ELL14  serial 11400004
+[  26.089s]   QWP0: addr 1  ELL14  serial 11400634
+[  26.089s]   HWP0: addr 2  ELL14  serial 11400911
+[  26.089s]   TX '0gp'
+[  32.093s]   RX ''  !! TIMEOUT after 6.00s (driver may resend the command)
+[  32.094s]   !! position query of HWP1 (addr 0) got unexpected reply ''
+[  32.094s]   TX '1gp'
+[  32.146s]   RX '1PO00000004\r\n'
+[  32.146s]   TX '2gp'
+[  32.210s]   RX '2POFFFFFFF8\r\n'
+[  32.211s]   POSITIONS: HWP1=??  QWP0=0.01  HWP0=359.98
+[  32.211s] === identify: wiggling each address in turn ===
+[  32.211s]   TX '0gp'
+[  32.242s]   RX '0PO00000001\r\n'
+[  32.242s]   TX '1gp'
+[  32.290s]   RX '1PO00000004\r\n'
+[  32.290s]   TX '2gp'
+[  32.354s]   RX '2POFFFFFFF8\r\n'
+[  32.355s]   POSITIONS: HWP1=0.00  QWP0=0.01  HWP0=359.98
+[  43.020s]   WIGGLING ONLY addr 0 (HWP1): 3 x (+45 deg, back)
+[  43.020s]   TX '0mr00004600'
+[  43.362s]   RX '0PO000045FF\r\n'
+[  43.862s]   TX '0mrFFFFBA00'
+[  44.258s]   RX '0POFFFFFFFB\r\n'
+[  44.758s]   TX '0mr00004600'
+[  45.073s]   RX '0PO000045FB\r\n'
+[  45.574s]   TX '0mrFFFFBA00'
+[  45.922s]   RX '0PO00000004\r\n'
+[  46.422s]   TX '0mr00004600'
+[  46.706s]   RX '0PO00004608\r\n'
+[  47.206s]   TX '0mrFFFFBA00'
+[  47.505s]   RX '0PO00000009\r\n'
+[  48.006s]   TX '0gp'
+[  48.033s]   RX '0PO00000008\r\n'
+[  48.034s]   TX '1gp'
+[  48.082s]   RX '1PO00000004\r\n'
+[  48.082s]   TX '2gp'
+[  48.145s]   RX '2POFFFFFFF7\r\n'
+[  48.146s]   POSITIONS: HWP1=0.02  QWP0=0.01  HWP0=359.98
+[  58.957s]   USER: addr 0 (expected HWP1) -> physically wiggled: none/unseen
+[  58.958s]   TX '0ma00000001'
+[  58.993s]   RX '0PO00000001\r\n'
+[  59.494s]   TX '0gp'
+[  59.521s]   RX '0PO00000001\r\n'
+[  59.521s]   TX '1gp'
+[  59.569s]   RX '1PO00000003\r\n'
+[  59.569s]   TX '2gp'
+[  59.633s]   RX '2POFFFFFFF7\r\n'
+[  59.633s]   POSITIONS: HWP1=0.00  QWP0=0.01  HWP0=359.98
+[  71.489s]   WIGGLING ONLY addr 1 (QWP0): 3 x (+45 deg, back)
+[  71.489s]   TX '1mr00004600'
+[  72.224s]   RX '1PO00004601\r\n'
+[  72.725s]   TX '1mrFFFFBA00'
+[  73.376s]   RX '1PO00000003\r\n'
+[  73.876s]   TX '1mr00004600'
+[  74.624s]   RX '1PO00004605\r\n'
+[  75.125s]   TX '1mrFFFFBA00'
+[  75.712s]   RX '1PO00000004\r\n'
+[  76.213s]   TX '1mr00004600'
+[  76.976s]   RX '1PO00004606\r\n'
+[  77.476s]   TX '1mrFFFFBA00'
+[  78.095s]   RX '1PO00000007\r\n'
+[  78.596s]   TX '0gp'
+[  78.624s]   RX '0PO00000001\r\n'
+[  78.624s]   TX '1gp'
+[  78.672s]   RX '1PO00000007\r\n'
+[  78.672s]   TX '2gp'
+[  78.736s]   RX '2POFFFFFFF7\r\n'
+[  78.736s]   POSITIONS: HWP1=0.00  QWP0=0.02  HWP0=359.98
+[  85.193s] === interrupted by user ===
