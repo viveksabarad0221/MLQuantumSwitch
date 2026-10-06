@@ -47,6 +47,7 @@ import warnings
 import os
 import pickle
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 _SIGMAS = [sigmax(), sigmay(), sigmaz()]
 
@@ -1236,7 +1237,24 @@ class ClusteringToolkit:
         if savepath is None:
             savepath = "Plots&Data/MLQS/unnamed.png"
         etas = sorted(dataset["per_eta"].keys())
-        fig = plt.figure(figsize=(5*len(etas), 5*len(methods)))
+        method_labels = {"kmeans": "K-Means", "kmedoids": "K-Medoids", "hdbscan": "HDBSCAN"}
+
+        # Share one cluster count / colormap across the whole grid so a color means the
+        # same cluster in every panel, and so a single legend can describe them all.
+        nc = int(getattr(self, "n_clusters", 1))
+        for eta in etas:
+            for method in methods:
+                labs = np.asarray(dataset["per_eta"][eta]["labels"][method])
+                if labs.size > 0:
+                    nc = max(nc, int(labs.max()) + 1)
+        if nc <= 10:
+            cmap = plt.cm.get_cmap("tab10")
+        elif nc <= 20:
+            cmap = plt.cm.get_cmap("tab20")
+        else:
+            cmap = plt.cm.get_cmap("hsv")
+
+        fig = plt.figure(figsize=(3.2*len(etas), 3.2*len(methods)))
         axes = [fig.add_subplot(len(methods), len(etas), i + 1, projection='3d') for i in range(len(methods) * len(etas))]
         for col, eta in enumerate(etas):
             payload = dataset["per_eta"][eta]
@@ -1245,15 +1263,11 @@ class ClusteringToolkit:
                 labels = payload["labels"][method]
                 ax = axes[row * len(etas) + col]
                 b = Bloch(fig=fig, axes=ax)
+                b.font_size = fontsize
+                b.xlabel = ['', '']
+                b.ylabel = ['', '']
+                b.zlabel = ['', '']
                 labs = np.asarray(labels)
-                n_clusters_detected = int(labs.max()) + 1 if labs.size > 0 else 1
-                nc = max(n_clusters_detected, int(getattr(self, "n_clusters", n_clusters_detected)))
-                if nc <= 10:
-                    cmap = plt.cm.get_cmap("tab10")
-                elif nc <= 20:
-                    cmap = plt.cm.get_cmap("tab20")
-                else:
-                    cmap = plt.cm.get_cmap("hsv")
                 n_effects = len(noisy_E[0]) if noisy_E and len(noisy_E) > 0 else 1
                 color_by_label = [cmap(int(l) % cmap.N) for l in labs]
                 b.vector_color = [col for col in color_by_label for _ in range(n_effects)]
@@ -1264,12 +1278,18 @@ class ClusteringToolkit:
         for col, eta in enumerate(etas):
             ax = axes[col]
             pos = ax.get_position(); x_center = pos.x0/0.9 + pos.width/2
-            fig.text(x_center, 0.9, rf"$\\eta$={eta:.2f}", ha='center', va='bottom', fontsize=fontsize)
+            fig.text(x_center, 0.92, rf"$\eta = {eta:.2f}$", ha='center', va='bottom', fontsize=fontsize)
         for row, method in enumerate(methods):
             ax = axes[row * len(etas)]
             pos = ax.get_position(); y_center = pos.y0 + pos.height / 2
-            fig.text(pos.x0, y_center, method, rotation='vertical', ha='center', va='center', fontsize=fontsize)
-        plt.tight_layout(rect=[0.1, 0, 1, 0.9])  # type: ignore
+            fig.text(pos.x0 - 0.02, y_center, method_labels.get(method, method), rotation='vertical', ha='center', va='center', fontsize=fontsize)
+
+        legend_handles = [Line2D([0], [0], marker='o', linestyle='', color=cmap(i % cmap.N),
+                                  markersize=fontsize * 0.5, label=f"Cluster {i + 1}") for i in range(nc)]
+        fig.legend(handles=legend_handles, loc='lower center', ncol=min(nc, 6),
+                   bbox_to_anchor=(0.55, -0.02), fontsize=fontsize * 0.8, frameon=False)
+
+        plt.tight_layout(rect=[0.08, 0.05, 1, 0.9])  # type: ignore
         os.makedirs(os.path.dirname(savepath), exist_ok=True)
         plt.savefig(savepath, dpi=300, bbox_inches='tight')
         plt.show()
