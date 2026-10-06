@@ -16,8 +16,8 @@ powermeter, and logs:
   * the position of all three mounts after every single move, flagging
     any move of HWP1 away from its set angle.
 
-With --identify it first nudges each address by +20 deg, one at a time,
-and asks you which mount physically moved (checks the address mapping).
+With --identify it first wiggles each address (3 x +-45 deg, after you press
+Enter and a countdown) and asks which mount moved (checks the address mapping).
 
 Usage (same -d / --addr-* / --cal-* / --mirror-phase / --raw options as
 tomography.py):
@@ -40,14 +40,20 @@ import tomography  # also puts the Characterization dir (elliptec.py) on sys.pat
 import elliptec
 
 T0 = time.time()
-LOG_LINES = []
 STATE = {'last_addr': None}
+
+# Written line by line, so an interrupted run (Ctrl+C) still leaves a log.
+_LOG_DIR = os.path.join(tomography.DATA_DIR, 'debug')
+os.makedirs(_LOG_DIR, exist_ok=True)
+LOG_PATH = os.path.join(_LOG_DIR, f'motor_debug_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.txt')
+_LOG_FILE = open(LOG_PATH, 'w')
 
 
 def log(line):
     line = f'[{time.time() - T0:8.3f}s] {line}'
     print(line)
-    LOG_LINES.append(line)
+    _LOG_FILE.write(line + '\n')
+    _LOG_FILE.flush()
 
 
 class LoggingSerial(serial.Serial):
@@ -137,16 +143,28 @@ def main():
     read_positions(dev, names)
 
     if args.identify:
-        log('=== identify: nudging each address by +20 deg ===')
+        log('=== identify: wiggling each address in turn ===')
+        print('\nFor each address, one mount will swing +45 deg / back, 3 times, after a countdown.')
+        print('Watch all three mounts (HWP1 = state prep, QWP0 and HWP0 = after the mirror).')
         for addr, name in names.items():
             before = read_positions(dev, names)
-            log(f'  moving ONLY addr {addr} ({name}) by +20 deg')
-            dev.moverelative(addr, 20)
-            time.sleep(1.0)
+            input(f'\n  >>> Press Enter, then watch the mounts: address {addr} (expected to be {name}) will wiggle ...')
+            for n in (3, 2, 1):
+                print(f'      {n} ...')
+                time.sleep(1.0)
+            log(f'  WIGGLING ONLY addr {addr} ({name}): 3 x (+45 deg, back)')
+            print('      >>> MOVING NOW <<<')
+            for _ in range(3):
+                dev.moverelative(addr, 45)
+                time.sleep(0.5)
+                dev.moverelative(addr, -45)
+                time.sleep(0.5)
+            print('      >>> DONE <<<')
             read_positions(dev, names)
-            answer = input(f'  Which mount physically moved when addr {addr} ({name}) was nudged? '
-                           f'(HWP1/QWP0/HWP0/several/none): ').strip()
-            log(f'  USER: addr {addr} ({name}) nudge -> moved: {answer!r}')
+            answer = input('  Which mount wiggled?  1 = HWP1 (prep)   2 = QWP0   3 = HWP0   '
+                           '4 = more than one   5 = none / did not see  : ').strip()
+            label = {'1': 'HWP1', '2': 'QWP0', '3': 'HWP0', '4': 'several', '5': 'none/unseen'}.get(answer, answer)
+            log(f'  USER: addr {addr} (expected {name}) -> physically wiggled: {label}')
             if before[name] is not None:
                 dev.moveabsolute(addr, before[name])
             time.sleep(0.5)
@@ -172,14 +190,13 @@ def main():
             check_hwp1(read_positions(dev, names), hwp1_target, f'basis {label} idle 1 s')
 
     dev.close()
-    stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    out_dir = os.path.join(tomography.DATA_DIR, 'debug')
-    os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, f'motor_debug_{stamp}.txt')
-    with open(out, 'w') as f:
-        f.write('\n'.join(LOG_LINES) + '\n')
-    print(f'\nLog written to {out} -- please send it back.')
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        log('=== interrupted by user ===')
+    finally:
+        _LOG_FILE.close()
+        print(f'\nLog written to {LOG_PATH} -- please send it back.')
