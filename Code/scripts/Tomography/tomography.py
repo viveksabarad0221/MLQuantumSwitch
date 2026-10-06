@@ -56,7 +56,14 @@ was measured with QWP0 at 135 deg). Fitting those runs individually
 gives 208.7, 209.6, 208.6, 206.5 deg, so phi is known to roughly +-3 deg.
 The spread is about what you'd expect from the n0 = (n_H + n_V)/2
 normalisation (purity > 1 in some runs). Override with --mirror-phase if
-the mirror is realigned. --raw also measures the uncorrected A/R
+the mirror is realigned.
+
+Update: a joint fit of phi and the QWP0/HWP0 zeros to test0-hwp1-0, -22.5
+and -45 (all 6 settings each, corrected + raw) gives phi = 209.47 deg,
+QWP0 zero 39.40 deg (was 37.85) and HWP0 zero 57.24 deg (was 57.35); these
+are now the defaults (Claude's suggestion). The QWP0 shift is robust across
+fit variants; the HWP0 zero and phi trade off against each other, so
+change them together. --raw also measures the uncorrected A/R
 settings (RAW_BASES) and reports the as-measured state after the mirror.
 
 The paper's n0 is obtained with a 50%-transmission, polarization-
@@ -108,8 +115,8 @@ RAW_BASES = [
 ]
 
 # Relative phase [deg] the mirror adds to |V> relative to |H>,
-# M = diag(1, exp(i*phi)). Fitted from test6, see the note in the docstring.
-MIRROR_PHASE_DEG = 212.05
+# M = diag(1, exp(i*phi)). See the note in the docstring.
+MIRROR_PHASE_DEG = 209.47 #212.05 (fitted from test6), 209.47 (Claude's suggestion: joint fit with the QWP0/HWP0 zeros to test0-hwp1-0/22.5/45)
 
 PAULI_X = numpy.array([[0, 1], [1, 0]], dtype=complex)
 PAULI_Y = numpy.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -196,9 +203,9 @@ def parse_args():
     parser.add_argument('--addr-hwp0', type=str, default='2', help='Elliptec address of HWP0 (analysis)')
     parser.add_argument('--cal-hwp1', type=float, default=132.42,
                         help='Calibration offset [deg] added to HWP1 angle (fast-axis zero from prior characterization)')
-    parser.add_argument('--cal-qwp0', type=float, default=37.85, #default=38.93, #37.8 (from polarimeter), 38.93 (from characterization plot)
+    parser.add_argument('--cal-qwp0', type=float, default=39.40, #default=37.85, #default=38.93, #37.8 (from polarimeter), 38.93 (from characterization plot), 39.40 (Claude's suggestion: fit to test0-hwp1-0/22.5/45, polarimeter zero was 1.55 deg off)
                         help='Calibration offset [deg] added to QWP0 angles')
-    parser.add_argument('--cal-hwp0', type=float, default=57.35, #default=57.77, #57.35 (from polarimeter), 57.77 (from characterization plot)
+    parser.add_argument('--cal-hwp0', type=float, default=57.24, #default=57.35, #default=57.77, #57.35 (from polarimeter), 57.77 (from characterization plot), 57.24 (Claude's suggestion: same fit, goes with MIRROR_PHASE_DEG = 209.47)
                         help='Calibration offset [deg] added to HWP0 angles')
     parser.add_argument('--repeats', type=int, default=5, help='Number of powermeter readings averaged per basis setting')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move, before reading')
@@ -217,6 +224,7 @@ def parse_args():
     return parser.parse_args()
 
 # zeroes = {hwp1: 132.42, qwp0: 37.85, hwp0: 57.35}  # from polarimeter
+# zeroes = {hwp1: 132.42, qwp0: 39.40, hwp0: 57.24}  # Claude's suggestion (fit to test0-hwp1-0/22.5/45)
 def move_and_settle(dev, addr, angle, settle):
     angle = angle % 360
     try:
