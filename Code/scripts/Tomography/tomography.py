@@ -103,8 +103,8 @@ from ThorlabsPM100 import ThorlabsPM100, USBTMC
 RAW_BASES = [
     ("H", 0.0, 0.0),
     ("V", 0.0, 45.0),
-    ("A", -45.0, 67.5),
-    ("R", -45.0, 0.0),
+    ("A", 45.0, 67.5),
+    ("R", 45.0, 0.0),
 ]
 
 # Relative phase [deg] the mirror adds to |V> relative to |H>,
@@ -216,7 +216,7 @@ def parse_args():
     parser.add_argument('--no-plot', action='store_true', help='Skip the Poincare-sphere plot')
     return parser.parse_args()
 
-
+# zeroes = {hwp1: 132.42, qwp0: 37.85, hwp0: 57.35}  # from polarimeter
 def move_and_settle(dev, addr, angle, settle):
     angle = angle % 360
     try:
