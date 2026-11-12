@@ -1,0 +1,97 @@
+{
+  "name": "sp_test_hwp1_22.5",
+  "hwp1_angle_deg": 0.0,
+  "calibration_deg": {
+    "hwp1": 132.42,
+    "qwp0": 39.4,
+    "hwp0": 57.24
+  },
+  "mirror_phase_deg": 209.47,
+  "tagger": {
+    "address": "131.130.102.199:41101",
+    "ch_signal": 8,
+    "ch_idler": 16,
+    "trigger_level_V": 0.05,
+    "delay_signal_ps": 32750.0,
+    "delay_idler_ps": 0.0,
+    "window_ps": 800.0,
+    "exposure_s": 22.5
+  },
+  "accidentals_subtracted": false,
+  "measurements": [
+    {
+      "basis": "H",
+      "qwp0_deg": 0.0,
+      "hwp0_deg": 0.0,
+      "singles_signal": 742850,
+      "singles_idler": 1467658,
+      "coincidences": 72780,
+      "accidentals": 77.52887077688888
+    },
+    {
+      "basis": "V",
+      "qwp0_deg": 0.0,
+      "hwp0_deg": 45.0,
+      "singles_signal": 145657,
+      "singles_idler": 1460645,
+      "coincidences": 361,
+      "accidentals": 15.129114223288889
+    },
+    {
+      "basis": "A",
+      "qwp0_deg": 45.0,
+      "hwp0_deg": 15.133,
+      "singles_signal": 431516,
+      "singles_idler": 1460817,
+      "coincidences": 34965,
+      "accidentals": 44.82602016512
+    },
+    {
+      "basis": "R",
+      "qwp0_deg": -45.0,
+      "hwp0_deg": 52.367,
+      "singles_signal": 443099,
+      "singles_idler": 1453114,
+      "coincidences": 36279,
+      "accidentals": 45.786550064782226
+    }
+  ],
+  "corrected": {
+    "stokes": {
+      "sx": 0.043901505311658304,
+      "sy": 0.007970905511272747,
+      "sz": 0.9901286556103963
+    },
+    "stokes_err": {
+      "sx": 0.006211069332674038,
+      "sy": 0.0063585511631051115,
+      "sz": 0.0005103739236398641
+    },
+    "purity": 0.991172816082075,
+    "purity_err": 0.0005738252289529652,
+    "rho_real": [
+      [
+        0.9950643278051982,
+        0.021950752655829152
+      ],
+      [
+        0.021950752655829152,
+        0.004935672194801843
+      ]
+    ],
+    "rho_imag": [
+      [
+        0.0,
+        -0.003985452755636373
+      ],
+      [
+        0.003985452755636373,
+        0.0
+      ]
+    ],
+    "rho_eigvals": [
+      0.004433245625740648,
+      0.9955667543742595
+    ]
+  }
+}
