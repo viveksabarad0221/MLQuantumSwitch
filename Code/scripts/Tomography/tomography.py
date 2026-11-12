@@ -118,6 +118,12 @@ RAW_BASES = [
 # M = diag(1, exp(i*phi)). See the note in the docstring.
 MIRROR_PHASE_DEG = 209.47 #212.05 (fitted from test6), 209.47 (Claude's suggestion: joint fit with the QWP0/HWP0 zeros to test0-hwp1-0/22.5/45)
 
+# Waveplate fast-axis zeros [deg], added to every commanded angle. Shared
+# with tomography_single_photon.py, so refits only need changing here.
+CAL_HWP1_DEG = 132.42
+CAL_QWP0_DEG = 39.40  # 37.8 (from polarimeter), 38.93 (from characterization plot), 39.40 (Claude's suggestion: fit to test0-hwp1-0/22.5/45, polarimeter zero was 1.55 deg off)
+CAL_HWP0_DEG = 57.24  # 57.35 (from polarimeter), 57.77 (from characterization plot), 57.24 (Claude's suggestion: same fit, goes with MIRROR_PHASE_DEG = 209.47)
+
 PAULI_X = numpy.array([[0, 1], [1, 0]], dtype=complex)
 PAULI_Y = numpy.array([[0, -1j], [1j, 0]], dtype=complex)
 PAULI_Z = numpy.array([[1, 0], [0, -1]], dtype=complex)
@@ -201,11 +207,11 @@ def parse_args():
     parser.add_argument('--addr-hwp1', type=str, default='0', help='Elliptec address of HWP1 (state prep)')
     parser.add_argument('--addr-qwp0', type=str, default='1', help='Elliptec address of QWP0 (analysis)')
     parser.add_argument('--addr-hwp0', type=str, default='2', help='Elliptec address of HWP0 (analysis)')
-    parser.add_argument('--cal-hwp1', type=float, default=132.42,
+    parser.add_argument('--cal-hwp1', type=float, default=CAL_HWP1_DEG,
                         help='Calibration offset [deg] added to HWP1 angle (fast-axis zero from prior characterization)')
-    parser.add_argument('--cal-qwp0', type=float, default=39.40, #default=37.85, #default=38.93, #37.8 (from polarimeter), 38.93 (from characterization plot), 39.40 (Claude's suggestion: fit to test0-hwp1-0/22.5/45, polarimeter zero was 1.55 deg off)
+    parser.add_argument('--cal-qwp0', type=float, default=CAL_QWP0_DEG,
                         help='Calibration offset [deg] added to QWP0 angles')
-    parser.add_argument('--cal-hwp0', type=float, default=57.24, #default=57.35, #default=57.77, #57.35 (from polarimeter), 57.77 (from characterization plot), 57.24 (Claude's suggestion: same fit, goes with MIRROR_PHASE_DEG = 209.47)
+    parser.add_argument('--cal-hwp0', type=float, default=CAL_HWP0_DEG,
                         help='Calibration offset [deg] added to HWP0 angles')
     parser.add_argument('--repeats', type=int, default=5, help='Number of powermeter readings averaged per basis setting')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move, before reading')
