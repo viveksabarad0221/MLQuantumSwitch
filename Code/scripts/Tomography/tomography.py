@@ -39,7 +39,7 @@ superposition (checked with a polarimeter placed after the mirror):
 phi includes the ~180 deg from the reflection itself (which takes D to
 A) plus ~30 deg of retardance from the coating. Without correction, a D
 input (HWP1 at 22.5 deg) was reconstructed as an elliptical state near A
-(tests 4-18, see Data/Tomography/indexing.txt).
+(tests 4-18, see Data/Tomography/old_QWP0/).
 
 We do not undo M on the reconstructed rho. Instead the analysis
 waveplates absorb it: for each target |t> we pick (q, h) such that
@@ -63,7 +63,16 @@ and -45 (all 6 settings each, corrected + raw) gives phi = 209.47 deg,
 QWP0 zero 39.40 deg (was 37.85) and HWP0 zero 57.24 deg (was 57.35); these
 are now the defaults (Claude's suggestion). The QWP0 shift is robust across
 fit variants; the HWP0 zero and phi trade off against each other, so
-change them together. --raw also measures the uncorrected A/R
+change them together.
+
+Update 2026-11-13: the QWP0 motor was replaced (the old one's axis moved
+by 4-7 deg between start-ups). New QWP0 zero 118.27 deg from a laser
+scan; all data taken with the old motor is in Data/Tomography/old_QWP0.
+A joint fit to the first laser tomographies with it then moved QWP0 to
+119.27 and HWP0 to 58.19. Every change of the zeros and the mirror phase
+is recorded in CALIBRATION_LOG.md next to this file.
+
+--raw also measures the uncorrected A/R
 settings (RAW_BASES) and reports the as-measured state after the mirror.
 
 The paper's n0 is obtained with a 50%-transmission, polarization-
@@ -116,13 +125,13 @@ RAW_BASES = [
 
 # Relative phase [deg] the mirror adds to |V> relative to |H>,
 # M = diag(1, exp(i*phi)). See the note in the docstring.
-MIRROR_PHASE_DEG = 209.47 #212.05 (fitted from test6), 209.47 (Claude's suggestion: joint fit with the QWP0/HWP0 zeros to test0-hwp1-0/22.5/45)
+MIRROR_PHASE_DEG = 210.26 #212.05 (fitted from test6), 209.47 (Claude's suggestion: joint fit with the QWP0/HWP0 zeros to test0-hwp1-0/22.5/45), 210.26 +/- 1.4 (mean of per-session joint fits to single-photon sweeps sp_sweep1/2/3: 211.66, 210.21, 208.90; 2026-11-12). A mirror-only fit with the zeros fixed is biased by the QWP0 zero error (gave 215-221, used for sp_sweep3_mirror at 216.55)
 
 # Waveplate fast-axis zeros [deg], added to every commanded angle. Shared
 # with tomography_single_photon.py, so refits only need changing here.
-CAL_HWP1_DEG = 132.42
-CAL_QWP0_DEG = 39.40  # 37.8 (from polarimeter), 38.93 (from characterization plot), 39.40 (Claude's suggestion: fit to test0-hwp1-0/22.5/45, polarimeter zero was 1.55 deg off)
-CAL_HWP0_DEG = 57.24  # 57.35 (from polarimeter), 57.77 (from characterization plot), 57.24 (Claude's suggestion: same fit, goes with MIRROR_PHASE_DEG = 209.47)
+CAL_HWP1_DEG = 132.42  # single-photon sweep fits sp_sweep1/2/3 (2026-11-12): 132.62 / 132.50 / 132.39 +/- 0.25 (not used)
+CAL_QWP0_DEG = 119.27  # 2026-11-13: joint fit to laser test0-hwp1-0..90 (119.27 +/- 0.28; goes with CAL_HWP0_DEG 58.19). See CALIBRATION_LOG.md. Before: 118.27 from the NEW QWP0 MOTOR (ELL14 s/n 11400796, installed 2026-11-13): fast axis 118.27 +/- 0.02 from laser+PM100D crossed/parallel scan over 4 start-ups (repeats to 0.03 deg; retardance 90.3 deg). Values below are for the OLD motor (its axis shifted 4-7 deg between start-ups) and no longer apply: 39.40 (last used), 37.8 (from polarimeter), 38.93 (from characterization plot), 39.40 (Claude's suggestion: fit to test0-hwp1-0/22.5/45, polarimeter zero was 1.55 deg off), single-photon sweep fits sp_sweep1/2/3 (2026-11-12): 37.83 / 36.38 / 44.29 +/- 0.6 (not used; sp_sweep3 jumped)
+CAL_HWP0_DEG = 58.19  # 2026-11-13: joint fit to laser test0-hwp1-0..90 with the new QWP0 motor (58.19 +/- 0.26). See CALIBRATION_LOG.md. Before: 57.24, 57.35 (from polarimeter), 57.77 (from characterization plot), 57.24 (Claude's suggestion: same fit, goes with MIRROR_PHASE_DEG = 209.47), single-photon sweep fits sp_sweep1/2/3 (2026-11-12): 57.95 / 58.03 / 58.49 +/- 0.4 (not used)
 
 PAULI_X = numpy.array([[0, 1], [1, 0]], dtype=complex)
 PAULI_Y = numpy.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -231,6 +240,8 @@ def parse_args():
 
 # zeroes = {hwp1: 132.42, qwp0: 37.85, hwp0: 57.35}  # from polarimeter
 # zeroes = {hwp1: 132.42, qwp0: 39.40, hwp0: 57.24}  # Claude's suggestion (fit to test0-hwp1-0/22.5/45)
+# zeroes = {hwp1: 132.42, qwp0: 118.27, hwp0: 57.24}  # new QWP0 motor (2026-11-13); old data in Data/Tomography/old_QWP0
+# zeroes = {hwp1: 132.42, qwp0: 119.27, hwp0: 58.19}  # joint fit to laser test0 with the new motor (2026-11-13). Full history: CALIBRATION_LOG.md
 def move_and_settle(dev, addr, angle, settle):
     angle = angle % 360
     try:

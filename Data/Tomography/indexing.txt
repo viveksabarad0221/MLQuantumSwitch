@@ -1,4 +1,9 @@
-zeroes = {hwp1: 132.42, qwp0: 37.85, hwp0: 57.35}
+New QWP0 motor (ELL14 s/n 11400796, installed 2026-11-13). Data taken with the old QWP0 motor is in old_QWP0/.
+
+test0 (laser + PM100D, 2026-11-13):
+
+zeroes = {hwp1: 132.42, qwp0: 118.27, hwp0: 57.24}  # qwp0 from laser crossed/parallel scan of the new motor; hwp1/hwp0 unchanged
+mirror phase = 210.26 deg
 
 RAW_BASES = [
     ("H", 0.0, 0.0),
@@ -6,4 +11,11 @@ RAW_BASES = [
     ("A", 45.0, 67.5),
     ("R", 45.0, 0.0),
 ]
+Bloch-angle errors vs target: 1.9 / 1.4 / 3.0 / 2.5 / 2.7 deg (HWP1 0/22.5/45/67.5/90)
 
+test1 (laser + PM100D, 2026-11-13):
+
+zeroes = {hwp1: 132.42, qwp0: 119.27, hwp0: 58.19}  # qwp0/hwp0 from a joint fit to test0 (see Code/scripts/Tomography/CALIBRATION_LOG.md)
+mirror phase = 210.26 deg
+RAW_BASES as above
+Bloch-angle errors vs target: 0.25 / 0.92 / 1.04 / 1.03 / 1.03 deg (mean 0.85)

@@ -111,7 +111,7 @@ def main():
     parser.add_argument('--addr-qwp0', type=str, default='1')
     parser.add_argument('--addr-hwp0', type=str, default='2')
     parser.add_argument('--cal-hwp1', type=float, default=132.42)
-    parser.add_argument('--cal-qwp0', type=float, default=37.85)
+    parser.add_argument('--cal-qwp0', type=float, default=tomography.CAL_QWP0_DEG)  # was 37.85 (old QWP0 motor)
     parser.add_argument('--cal-hwp0', type=float, default=57.35)
     parser.add_argument('--mirror-phase', type=float, default=tomography.MIRROR_PHASE_DEG)
     parser.add_argument('--raw', action='store_true')

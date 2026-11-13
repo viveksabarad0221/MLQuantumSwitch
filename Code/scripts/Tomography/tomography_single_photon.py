@@ -55,7 +55,9 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-o', '--name', type=str, default='', help='Name of this run (output filenames)')
     parser.add_argument('-d', '--motor-device', type=str, required=True, help='Serial port of the elliptec bus, e.g. COM5')
-    parser.add_argument('-s', '--hwp1-angle', type=float, required=True, help='Fixed HWP1 angle [deg] (state prep)')
+    parser.add_argument('-s', '--hwp1-angle', type=float, nargs='+', required=True,
+                        help='HWP1 angle(s) [deg] (state prep). Several angles are measured back-to-back in one '
+                             'session (motors homed once), e.g. -s 0 22.5 45 67.5 90 0 (repeat 0 as a reference check)')
     parser.add_argument('--tagger-address', type=str, default='131.130.102.199:41101',
                         help='Time Tagger network address host:port (41101 is the Time Tagger Server default)')
     parser.add_argument('--ch-signal', type=int, default=8, help='Time Tagger channel of the signal detector')
@@ -76,6 +78,8 @@ def parse_args():
     parser.add_argument('--cal-qwp0', type=float, default=CAL_QWP0_DEG, help='QWP0 zero [deg]')
     parser.add_argument('--cal-hwp0', type=float, default=CAL_HWP0_DEG, help='HWP0 zero [deg]')
     parser.add_argument('--settle', type=float, default=0.3, help='Settle time [s] after each motor move')
+    parser.add_argument('--pos-tol', type=float, default=0.5,
+                        help='Warn when a read-back waveplate angle is further than this [deg] from the commanded one')
     parser.add_argument('--move-timeout', type=float, default=6.0, help='Elliptec serial timeout [s] (see tomography.py)')
     parser.add_argument('--mirror-phase', type=float, default=MIRROR_PHASE_DEG,
                         help='Mirror V-vs-H phase [deg] compensated by the A/R settings (0 = no correction)')
@@ -162,6 +166,37 @@ def measure_counts(tagger, ch_s, ch_i, window_ps, exposure_s):
     return int(singles[0]), int(singles[1]), int(coincidences[0])
 
 
+def read_angle(dev, addr):
+    """Actual angle [deg, 0-360) reported by the motor's encoder, or None on a bad reply."""
+    ret = dev.pos(addr)
+    if dev.ispos(ret) and ret[0] == addr:
+        return dev.pos2deg(addr, ret) % 360
+    print(f'  WARNING: position query of addr {addr} got unexpected reply {ret!r}')
+    return None
+
+
+def angle_dev(actual, commanded):
+    """Signed deviation actual - commanded [deg], wrapped to [-180, 180)."""
+    return None if actual is None else (actual - commanded % 360 + 180) % 360 - 180
+
+
+def read_back(dev, targets, tol, when):
+    """Read every waveplate's actual angle, warn if any is more than tol deg off.
+
+    targets: {name: (addr, commanded absolute angle incl. calibration)}.
+    Returns {name_read_deg: actual, name_dev_deg: actual - commanded}.
+    """
+    out = {}
+    for name, (addr, cmd) in targets.items():
+        actual = read_angle(dev, addr)
+        dev_deg = angle_dev(actual, cmd)
+        out[f'{name}_read_deg'] = actual
+        out[f'{name}_dev_deg'] = dev_deg
+        if dev_deg is None or abs(dev_deg) > tol:
+            print(f'  WARNING ({when}): {name} at {actual} deg, commanded {cmd % 360:.3f} deg (dev {dev_deg})')
+    return out
+
+
 def poisson_errors(n, a_key, r_key, n_boot, rng):
     """Std of (sx, sy, sz, purity) from Poisson-resampling the counts in n."""
     keys = ['H', 'V', a_key, r_key]
@@ -175,12 +210,99 @@ def poisson_errors(n, a_key, r_key, n_boot, rng):
     return numpy.std(out, axis=0)
 
 
+PLATES = ('hwp1', 'qwp0', 'hwp0')
+CSV_FIELDS = (['basis', 'qwp0_deg', 'hwp0_deg', 'singles_signal', 'singles_idler', 'coincidences', 'accidentals']
+              + [f'{p}_{k}' for k in ('read_deg', 'dev_deg') for p in PLATES]
+              + [f'{p}_dev_after_deg' for p in PLATES] + ['t_start_s'])
+
+
+def measure_tomography(args, dev, tagger, bases, hwp1_angle, csv_path, t0):
+    """Count every analysis setting for one (already set) HWP1 angle; rows are also written to csv_path."""
+    ch_s, ch_i = args.ch_signal, args.ch_idler
+    rows = []
+    with open(csv_path, 'w', newline='') as f:  # written row by row, so a crash keeps what was measured
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        w.writeheader()
+        for label, q, h in bases:
+            print(f'Basis {label}: QWP0 -> {q} deg, HWP0 -> {h} deg')
+            move_and_settle(dev, args.addr_qwp0, q + args.cal_qwp0, args.settle)
+            move_and_settle(dev, args.addr_hwp0, h + args.cal_hwp0, args.settle)
+            targets = {'hwp1': (args.addr_hwp1, hwp1_angle + args.cal_hwp1),
+                       'qwp0': (args.addr_qwp0, q + args.cal_qwp0),
+                       'hwp0': (args.addr_hwp0, h + args.cal_hwp0)}
+            pos = read_back(dev, targets, args.pos_tol, 'after move')
+            print('  read-back dev [deg]: ' + '  '.join(f'{p}={pos[p + "_dev_deg"]:+.3f}' for p in PLATES
+                                                     if pos[p + '_dev_deg'] is not None))
+            t_start = time.time() - t0
+            s, i, c = measure_counts(tagger, ch_s, ch_i, args.window, args.exposure)
+            after = read_back(dev, targets, args.pos_tol, 'after exposure')  # catches drift / bumps during counting
+            acc = 2 * args.window / PS * s * i / args.exposure
+            print(f'  singles s={s} ({s / args.exposure:.0f}/s)  i={i} ({i / args.exposure:.0f}/s)   '
+                  f'coincidences={c} ({c / args.exposure:.0f}/s)   accidentals~{acc:.1f}')
+            row = {'basis': label, 'qwp0_deg': q, 'hwp0_deg': h, 'singles_signal': s,
+                   'singles_idler': i, 'coincidences': c, 'accidentals': acc, **pos,
+                   **{f'{p}_dev_after_deg': after[f'{p}_dev_deg'] for p in PLATES},
+                   't_start_s': round(t_start, 2)}
+            rows.append(row)
+            w.writerow(row)
+            f.flush()
+    return rows
+
+
+def analyse_and_save(args, name, base, hwp1_angle, rows, delay_idler, rng):
+    """Reconstruct the state(s) from rows, print, write base.json; returns {key: (res, err)}."""
+    n = {r['basis']: r['coincidences'] - (r['accidentals'] if args.subtract_accidentals else 0) for r in rows}
+    results = {}
+    for key, title, a_key, r_key in (('corrected', 'Mirror-corrected (state before the mirror)', 'A', 'R'),
+                                     ('raw', 'Raw (state after the mirror, no correction)', 'A_raw', 'R_raw')):
+        if key == 'raw' and not args.raw:
+            continue
+        res = stokes_and_density_matrix(n, a_key, r_key)
+        err = poisson_errors(n, a_key, r_key, args.n_boot, rng)
+        results[key] = (res, err)
+        print(f'\n--- HWP1 = {hwp1_angle} deg: {title} ---')
+        print(f'n_H={n["H"]:.1f}  n_V={n["V"]:.1f}  n_A={n[a_key]:.1f}  n_R={n[r_key]:.1f}  coincidences')
+        print(f'Sx={res["sx"]:.4f}+/-{err[0]:.4f}  Sy={res["sy"]:.4f}+/-{err[1]:.4f}  Sz={res["sz"]:.4f}+/-{err[2]:.4f}')
+        print(f'Purity Tr(rho^2) = {res["purity"]:.4f} +/- {err[3]:.4f}')
+        print(f'rho eigenvalues: {res["eigvals"]}  (a negative one = unphysical, from noise)')
+        print('rho =')
+        print(res['rho'])
+
+    summary = {
+        'name': name,
+        'hwp1_angle_deg': hwp1_angle,
+        'calibration_deg': {'hwp1': args.cal_hwp1, 'qwp0': args.cal_qwp0, 'hwp0': args.cal_hwp0},
+        'mirror_phase_deg': args.mirror_phase,
+        'tagger': {'address': args.tagger_address, 'ch_signal': args.ch_signal, 'ch_idler': args.ch_idler,
+                   'trigger_level_V': args.trigger_level, 'delay_signal_ps': args.delay_signal,
+                   'delay_idler_ps': delay_idler, 'window_ps': args.window, 'exposure_s': args.exposure},
+        'session_hwp1_angles_deg': args.hwp1_angle,
+        'accidentals_subtracted': args.subtract_accidentals,
+        'measurements': rows,
+    }
+    for key, (res, err) in results.items():
+        summary[key] = {
+            'stokes': {'sx': res['sx'], 'sy': res['sy'], 'sz': res['sz']},
+            'stokes_err': {'sx': err[0], 'sy': err[1], 'sz': err[2]},
+            'purity': res['purity'], 'purity_err': err[3],
+            'rho_real': res['rho'].real.tolist(), 'rho_imag': res['rho'].imag.tolist(),
+            'rho_eigvals': res['eigvals'].tolist(),
+        }
+    with open(base + '.json', 'w') as jf:
+        json.dump(summary, jf, indent=2)
+    print(f'\nSaved counts to {base}.csv and summary to {base}.json')
+    return results
+
+
 def main():
     args = parse_args()
 
     name = (args.name or input('Please enter a name for this run: ').strip() or 'tomography_sp').replace(' ', '_')
     os.makedirs(SP_DATA_DIR, exist_ok=True)
-    base = os.path.join(SP_DATA_DIR, name)
+    angles = args.hwp1_angle
+    # one angle: <name>.csv as before; several: <name>_<k>_hwp1_<angle>.csv (k keeps a repeated angle apart)
+    run_bases = ([os.path.join(SP_DATA_DIR, name)] if len(angles) == 1 else
+                 [os.path.join(SP_DATA_DIR, f'{name}_{k:02d}_hwp1_{a:g}') for k, a in enumerate(angles)])
 
     bases = build_bases(args.mirror_phase)
     if args.raw:
@@ -205,73 +327,32 @@ def main():
         dev = elliptec.Elliptec(dev=args.motor_device, addrs=addrs, home=True, freq=True)
         dev.ser.timeout = args.move_timeout
 
-        print(f'Setting HWP1 to {args.hwp1_angle} deg (+ {args.cal_hwp1} deg calibration) ...')
-        move_and_settle(dev, args.addr_hwp1, args.hwp1_angle + args.cal_hwp1, args.settle)
-
-        rows = []
-        fields = ['basis', 'qwp0_deg', 'hwp0_deg', 'singles_signal', 'singles_idler', 'coincidences', 'accidentals']
-        with open(base + '.csv', 'w', newline='') as f:  # written row by row, so a crash keeps what was measured
-            w = csv.DictWriter(f, fieldnames=fields)
-            w.writeheader()
-            for label, q, h in bases:
-                print(f'Basis {label}: QWP0 -> {q} deg, HWP0 -> {h} deg')
-                move_and_settle(dev, args.addr_qwp0, q + args.cal_qwp0, args.settle)
-                move_and_settle(dev, args.addr_hwp0, h + args.cal_hwp0, args.settle)
-                s, i, c = measure_counts(tagger, ch_s, ch_i, args.window, args.exposure)
-                acc = 2 * args.window / PS * s * i / args.exposure
-                print(f'  singles s={s} ({s / args.exposure:.0f}/s)  i={i} ({i / args.exposure:.0f}/s)   '
-                      f'coincidences={c} ({c / args.exposure:.0f}/s)   accidentals~{acc:.1f}')
-                row = {'basis': label, 'qwp0_deg': q, 'hwp0_deg': h, 'singles_signal': s,
-                       'singles_idler': i, 'coincidences': c, 'accidentals': acc}
-                rows.append(row)
-                w.writerow(row)
-                f.flush()
+        runs = []  # (hwp1 angle, output base, rows)
+        t0 = time.time()
+        for angle, base in zip(angles, run_bases):
+            print(f'\n=== Setting HWP1 to {angle} deg (+ {args.cal_hwp1} deg calibration) ===')
+            move_and_settle(dev, args.addr_hwp1, angle + args.cal_hwp1, args.settle)
+            runs.append((angle, base, measure_tomography(args, dev, tagger, bases, angle, base + '.csv', t0)))
     finally:
         TimeTagger.freeTimeTagger(tagger)
 
-    n = {r['basis']: r['coincidences'] - (r['accidentals'] if args.subtract_accidentals else 0) for r in rows}
     rng = numpy.random.default_rng()
-    results = {}
-    for key, title, a_key, r_key in (('corrected', 'Mirror-corrected (state before the mirror)', 'A', 'R'),
-                                     ('raw', 'Raw (state after the mirror, no correction)', 'A_raw', 'R_raw')):
-        if key == 'raw' and not args.raw:
-            continue
-        res = stokes_and_density_matrix(n, a_key, r_key)
-        err = poisson_errors(n, a_key, r_key, args.n_boot, rng)
-        results[key] = (res, err)
-        print(f'\n--- {title} ---')
-        print(f'n_H={n["H"]:.1f}  n_V={n["V"]:.1f}  n_A={n[a_key]:.1f}  n_R={n[r_key]:.1f}  coincidences')
-        print(f'Sx={res["sx"]:.4f}+/-{err[0]:.4f}  Sy={res["sy"]:.4f}+/-{err[1]:.4f}  Sz={res["sz"]:.4f}+/-{err[2]:.4f}')
-        print(f'Purity Tr(rho^2) = {res["purity"]:.4f} +/- {err[3]:.4f}')
-        print(f'rho eigenvalues: {res["eigvals"]}  (a negative one = unphysical, from noise)')
-        print('rho =')
-        print(res['rho'])
+    all_results = [(angle, base, analyse_and_save(args, name, base, angle, rows, delay_idler, rng))
+                   for angle, base, rows in runs]
 
-    summary = {
-        'name': name,
-        'hwp1_angle_deg': args.hwp1_angle,
-        'calibration_deg': {'hwp1': args.cal_hwp1, 'qwp0': args.cal_qwp0, 'hwp0': args.cal_hwp0},
-        'mirror_phase_deg': args.mirror_phase,
-        'tagger': {'address': args.tagger_address, 'ch_signal': args.ch_signal, 'ch_idler': args.ch_idler,
-                   'trigger_level_V': args.trigger_level, 'delay_signal_ps': args.delay_signal,
-                   'delay_idler_ps': delay_idler, 'window_ps': args.window, 'exposure_s': args.exposure},
-        'accidentals_subtracted': args.subtract_accidentals,
-        'measurements': rows,
-    }
-    for key, (res, err) in results.items():
-        summary[key] = {
-            'stokes': {'sx': res['sx'], 'sy': res['sy'], 'sz': res['sz']},
-            'stokes_err': {'sx': err[0], 'sy': err[1], 'sz': err[2]},
-            'purity': res['purity'], 'purity_err': err[3],
-            'rho_real': res['rho'].real.tolist(), 'rho_imag': res['rho'].imag.tolist(),
-            'rho_eigvals': res['eigvals'].tolist(),
-        }
-    with open(base + '.json', 'w') as jf:
-        json.dump(summary, jf, indent=2)
-    print(f'\nSaved counts to {base}.csv and summary to {base}.json')
+    if len(runs) > 1:
+        # linear-polarisation angle on the sphere: psi = atan2(sx, sz)/2 (sx>0 = D); an ideal HWP1 at a gives |psi| = 2a
+        print('\n=== Session summary (mirror-corrected) ===')
+        print(f'{"HWP1":>6} {"Sx":>15} {"Sy":>15} {"Sz":>15} {"purity":>7} {"psi=atan2(Sx,Sz)/2":>19}')
+        for angle, _, results in all_results:
+            res, err = results['corrected']
+            psi = numpy.degrees(numpy.arctan2(res['sx'], res['sz'])) / 2
+            print(f'{angle:6g} {res["sx"]:+.3f}+/-{err[0]:.3f} {res["sy"]:+.3f}+/-{err[1]:.3f} '
+                  f'{res["sz"]:+.3f}+/-{err[2]:.3f} {res["purity"]:7.3f} {psi:+19.2f}')
 
-    if not args.no_plot:
-        plot_poincare([(r['sx'], r['sy'], r['sz']) for r, _ in results.values()], base)
+    if not args.no_plot:  # at the end: plt.show() in plot_poincare blocks in interactive backends
+        for _, base, results in all_results:
+            plot_poincare([(r['sx'], r['sy'], r['sz']) for r, _ in results.values()], base)
 
 
 if __name__ == '__main__':

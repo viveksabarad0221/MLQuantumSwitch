@@ -1,0 +1,145 @@
+{
+  "name": "sp_repA_t10",
+  "hwp1_angle_deg": 90.0,
+  "calibration_deg": {
+    "hwp1": 132.42,
+    "qwp0": 39.4,
+    "hwp0": 57.24
+  },
+  "mirror_phase_deg": 210.26,
+  "tagger": {
+    "address": "131.130.102.199:41101",
+    "ch_signal": 8,
+    "ch_idler": 16,
+    "trigger_level_V": 0.05,
+    "delay_signal_ps": 32750.0,
+    "delay_idler_ps": 0.0,
+    "window_ps": 800.0,
+    "exposure_s": 10.0
+  },
+  "session_hwp1_angles_deg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    0.0
+  ],
+  "accidentals_subtracted": false,
+  "measurements": [
+    {
+      "basis": "H",
+      "qwp0_deg": 0.0,
+      "hwp0_deg": 0.0,
+      "singles_signal": 327783,
+      "singles_idler": 643101,
+      "coincidences": 32554,
+      "accidentals": 33.72761201328,
+      "hwp1_read_deg": 222.42103794642858,
+      "hwp1_dev_deg": 0.0010379464285961149,
+      "qwp0_read_deg": 39.407645089285715,
+      "qwp0_dev_deg": 0.007645089285716722,
+      "hwp0_read_deg": 57.236886160714285,
+      "hwp0_dev_deg": -0.003113839285731501,
+      "hwp1_dev_after_deg": 0.0035491071428737087,
+      "qwp0_dev_after_deg": 0.010156249999994316,
+      "hwp0_dev_after_deg": -0.005625000000009095,
+      "t_start_s": 206.06
+    },
+    {
+      "basis": "V",
+      "qwp0_deg": 0.0,
+      "hwp0_deg": 45.0,
+      "singles_signal": 65468,
+      "singles_idler": 641626,
+      "coincidences": 343,
+      "accidentals": 6.72095535488,
+      "hwp1_read_deg": 222.42103794642858,
+      "hwp1_dev_deg": 0.0010379464285961149,
+      "qwp0_read_deg": 39.407645089285715,
+      "qwp0_dev_deg": 0.007645089285716722,
+      "hwp0_read_deg": 102.24190848214286,
+      "hwp0_dev_deg": 0.0019084821428521082,
+      "hwp1_dev_after_deg": 0.0010379464285961149,
+      "qwp0_dev_after_deg": 0.005133928571439128,
+      "hwp0_dev_after_deg": -0.0006026785714539074,
+      "t_start_s": 217.41
+    },
+    {
+      "basis": "A",
+      "qwp0_deg": 45.0,
+      "hwp0_deg": 14.935,
+      "singles_signal": 218979,
+      "singles_idler": 642357,
+      "coincidences": 19141,
+      "accidentals": 22.506030960479997,
+      "hwp1_read_deg": 222.42103794642858,
+      "hwp1_dev_deg": 0.0010379464285961149,
+      "qwp0_read_deg": 84.40764508928571,
+      "qwp0_dev_deg": 0.0076450892856883,
+      "hwp0_read_deg": 72.17327008928571,
+      "hwp0_dev_deg": -0.0017299107142889625,
+      "hwp1_dev_after_deg": 0.0035491071428737087,
+      "qwp0_dev_after_deg": 0.005133928571410706,
+      "hwp0_dev_after_deg": -0.0017299107142889625,
+      "t_start_s": 229.81
+    },
+    {
+      "basis": "R",
+      "qwp0_deg": -45.0,
+      "hwp0_deg": 52.565,
+      "singles_signal": 182931,
+      "singles_idler": 643958,
+      "coincidences": 14836,
+      "accidentals": 18.84798094368,
+      "hwp1_read_deg": 222.42103794642858,
+      "hwp1_dev_deg": 0.0010379464285961149,
+      "qwp0_read_deg": 354.40011160714283,
+      "qwp0_dev_deg": 0.00011160714285551876,
+      "hwp0_read_deg": 109.80803571428571,
+      "hwp0_dev_deg": 0.003035714285715585,
+      "hwp1_dev_after_deg": -0.0014732142857099007,
+      "qwp0_dev_after_deg": 0.00011160714285551876,
+      "hwp0_dev_after_deg": 0.0005245535714379912,
+      "t_start_s": 242.34
+    }
+  ],
+  "corrected": {
+    "stokes": {
+      "sx": -0.16369273793962974,
+      "sy": 0.09803325531203454,
+      "sz": 0.9791470346840138
+    },
+    "stokes_err": {
+      "sx": 0.01015287884127025,
+      "sy": 0.009034360649164627,
+      "sz": 0.0011469813185134064
+    },
+    "purity": 0.997567373565872,
+    "purity_err": 0.00195935194671634,
+    "rho_real": [
+      [
+        0.9895735173420068,
+        -0.08184636896981487
+      ],
+      [
+        -0.08184636896981487,
+        0.010426482657993119
+      ]
+    ],
+    "rho_imag": [
+      [
+        0.0,
+        -0.04901662765601727
+      ],
+      [
+        0.04901662765601727,
+        0.0
+      ]
+    ],
+    "rho_eigvals": [
+      0.0012177962447577299,
+      0.9987822037552423
+    ]
+  }
+}
