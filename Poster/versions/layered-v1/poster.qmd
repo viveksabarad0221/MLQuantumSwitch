@@ -1,0 +1,225 @@
+---
+title: "Certifying Measurement Incompatibility with a Photonic Quantum Switch"
+event: "Vienna QFC 2026"
+poster-authors:
+  - name: "Vivek Sabarad"
+    aff: "1,2,*"
+  - name: "Carla Richter"
+    aff: "1"
+  - name: "Martin Mauser"
+    aff: "1,2"
+  - name: "Iris Agresti"
+    aff: "1"
+  - name: "Lee Rozema"
+    aff: "1"
+  - name: "Philip Walther"
+    aff: "1,3"
+poster-affiliations:
+  - "University of Vienna, Faculty of Physics, Vienna Center for Quantum Science and Technology (VCQ), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "University of Vienna, Faculty of Physics, Vienna Doctoral School in Physics (VDSP), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "Institute for Quantum Optics and Quantum Information (IQOQI) Vienna, Austrian Academy of Sciences, Vienna, Austria"
+poster-theme: "swiss"
+poster-logo: "logos/univie.svg"
+footer-logos:
+  - "logos/fwf.svg"
+  - "logos/eu-funded.png"
+poster-funding: "This work was supported by the EPIQUE project, funded by the European Union and the Austrian Science Fund (FWF). [grant numbers TBD]"
+contact: "\\* vivek.sabarad\\@univie.ac.at"
+format:
+  qposter-typst:
+    font-paths: ["fonts"]
+---
+
+::: {.lead}
+Two sharp measurements can be performed jointly only if they **commute**. So run them **in both orders at once**, and let interference reveal whether the order mattered.
+:::
+
+<!-- ===================================================================== -->
+::::: {.layer num="01" label="Question" title="Can two measurements be performed jointly?"}
+
+:::: {.poster-grid widths="1fr, 1.35fr"}
+
+::: {.col}
+::: {.panel title="Compatibility"}
+Observables $A$, $B$ with spectral projectors $\{P_i\}$, $\{Q_j\}$ are **compatible** if one measurement reproduces the statistics of both. For sharp observables this holds iff $[P_i,Q_j]=0$ for all $i,j$.
+
+::: {.placeholder height="7.5cm"}
+Fig. 1 — Compatible ($\sigma_z,\sigma_z$) vs. incompatible ($\sigma_z,\sigma_x$) eigenbases on the Bloch sphere.
+:::
+:::
+:::
+
+::: {.col}
+::: {.panel title="Two ways to decide"}
+*Standard route.* Cost grows with the dimension $d$.
+
+:::: {.flow}
+::: {.col}
+Process tomography of both measurements
+:::
+::: {.col}
+Semidefinite feasibility test
+:::
+::: {.col}
+Compatible: yes / no
+:::
+::::
+
+*Switch route.* Sample complexity **independent of $d$**.
+
+:::: {.flow}
+::: {.col}
+Apply $\mathcal{A}$, $\mathcal{B}$ in superposed orders
+:::
+::: {.col}
+Measure the control qubit
+:::
+::: {.col .hl}
+One number, $p_-$
+:::
+::::
+:::
+:::
+
+::::
+
+:::::
+
+::: {.bridge}
+If the order of $\mathcal{A}$ and $\mathcal{B}$ matters, put both orders in superposition and let them interfere.
+:::
+
+<!-- ===================================================================== -->
+::::: {.layer num="02" label="Principle" title="The quantum SWITCH turns non-commutativity into interference"}
+
+:::: {.poster-grid widths="1fr, 1.35fr"}
+
+::: {.col}
+::: {.panel title="Circuit"}
+::: {.placeholder height="11cm"}
+Fig. 2 — Quantum SWITCH: control $\lvert +\rangle$ chooses [$\mathcal{A}$ then $\mathcal{B}$]{.ab} or [$\mathcal{B}$ then $\mathcal{A}$]{.ba}; the control is then measured in the Fourier basis.
+:::
+:::
+:::
+
+::: {.col}
+::: {.panel title="From a click rate to an incompatibility measure"}
+:::: {.flow}
+::: {.col}
+$p_-$\
+"$-$" on the control
+:::
+::: {.col}
+$\mathrm{NCOM}_\rho=\sqrt{2p_-}$\
+non-commutativity
+:::
+::: {.col .hl}
+$\mathrm{MED}_\rho$\
+incompatibility
+:::
+::::
+
+$$
+p_- = \tfrac{1}{4}\sum_{i,j}\operatorname{Tr}\left(\rho\,\lvert[C_i,D_j]\rvert^2\right),
+\qquad
+\mathrm{MED}_\rho = \sqrt{1-\operatorname{Re}\sum_{i,j}\operatorname{Tr}\left[\rho\,P_iQ_jP_iQ_j\right]}
+$$
+
+::: {.keybox}
+**For sharp observables $\mathrm{NCOM}_\rho = \mathrm{MED}_\rho$ exactly:** one interference fringe certifies incompatibility. No tomography, no SDP [1].
+:::
+:::
+:::
+
+::::
+
+:::::
+
+::: {.bridge}
+Build it with a single photon: polarization is the system, arrival time is the switch.
+:::
+
+<!-- ===================================================================== -->
+::::: {.layer num="03" label="Realisation" title="A time-bin switch that is stable by construction"}
+
+:::: {.poster-grid widths="1fr, 1.15fr, 1fr"}
+
+::: {.col}
+::: {.panel title="Dictionary"}
+| Concept | Photonic element |
+|:--------|:-----------------|
+| System $\rho$ | polarization qubit |
+| Control qubit | time bins $\lvert e\rangle,\lvert l\rangle$ |
+| [Order $\mathcal{A}\mathcal{B}$]{.ab} / [order $\mathcal{B}\mathcal{A}$]{.ba} | [early]{.ab} / [late]{.ba} bin |
+| Lüders channel $\mathcal{A}$ | QWP + HWP + calcite |
+| Environment | temporal wavepacket |
+:::
+:::
+
+::: {.col}
+::: {.panel title="Setup"}
+::: {.placeholder height="14cm"}
+Fig. 3 — Heralded polarization qubit, time-bin control, waveplates + calcite for each block, interference of the control.
+:::
+:::
+:::
+
+::: {.col}
+::: {.panel title="Dephasing by walk-off"}
+Calcite delays $\lvert V\rangle$ by $\Delta\tau = L\,\Delta n_g/c$; tracing out time leaves $\mathcal{A}(\rho)=\sum_i P_i\rho P_i$ once $\Delta\tau\gg\tau_{\text{coh}}$.
+
+::: {.note}
+$\tau_{\text{coh}} = 3.3\,\text{ps} \ll \Delta\tau_{A,B} \approx 10\text{–}18\,\text{ps} \ll \Delta t_c = 150\,\text{ns}$
+:::
+:::
+
+::: {.panel title="Why it is stable"}
+Delays commute, $T_{\tau_A}T_{\tau_B}=T_{\tau_B}T_{\tau_A}$: both orders leave **identical wavepackets**. No active stabilization needed.
+:::
+:::
+
+::::
+
+:::::
+
+::: {.bridge}
+Test it on qubits, then ask what the signal means beyond projective measurements.
+:::
+
+<!-- ===================================================================== -->
+::::: {.layer num="04" label="Experiment" title="Expected signal, status and next steps"}
+
+:::: {.poster-grid widths="1fr, 1fr, 1fr"}
+
+::: {.col}
+::: {.panel title="Expected signal"}
+::: {.placeholder height="11cm"}
+Fig. 4 — Simulated $p_-$ and MED vs. angle between the eigenbases of $A$ and $B$.
+:::
+:::
+:::
+
+::: {.col}
+::: {.panel title="Status"}
+::: {.placeholder height="11cm"}
+Fig. 5 — Waveplate characterization and heralded single-photon tomography.
+:::
+:::
+:::
+
+::: {.col}
+::: {.panel title="Beyond sharp measurements"}
+For **POVMs**, commutativity is no longer necessary for joint measurability; what the switch certifies there must be established anew.
+:::
+
+::: {.panel title="References"}
+::: {.smallrefs}
+[1] N. Gao *et al.*, PRL **130**, 170201 (2023).\
+[2] G. Chiribella *et al.*, PRA **88**, 022318 (2013).
+:::
+:::
+:::
+
+::::
+
+:::::

@@ -1,0 +1,132 @@
+---
+title: "Certifying Incompatibility and Clustering Observables with a Photonic Quantum Switch"
+event: "Vienna QFC 2026"
+poster-authors:
+  - name: "Vivek Sabarad"
+    aff: "1,2,*"
+  - name: "Carla Richter"
+    aff: "1"
+  - name: "Martin Mauser"
+    aff: "1,2"
+  - name: "Iris Agresti"
+    aff: "1"
+  - name: "Lee Rozema"
+    aff: "1"
+  - name: "Philip Walther"
+    aff: "1,3"
+poster-affiliations:
+  - "University of Vienna, Faculty of Physics, Vienna Center for Quantum Science and Technology (VCQ), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "University of Vienna, Faculty of Physics, Vienna Doctoral School in Physics (VDSP), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "Institute for Quantum Optics and Quantum Information (IQOQI) Vienna, Austrian Academy of Sciences, Vienna, Austria"
+poster-theme: "swiss"
+poster-logo: "logos/univie.svg"
+footer-logos:
+  - "logos/fwf.svg"
+  - "logos/eu-funded.png"
+poster-funding: "This work was supported by the EPIQUE project, funded by the European Union and the Austrian Science Fund (FWF). [grant numbers TBD]"
+contact: "\\* vivek.sabarad\\@univie.ac.at"
+format:
+  qposter-typst:
+    font-paths: ["fonts"]
+---
+
+:::: {.poster-grid}
+
+::: {.col}
+
+::: {.card title="Motivation" accent="blue"}
+Are two quantum measurements **compatible**, i.e. can they be performed jointly? Answering this in general requires full **process tomography** followed by a **semidefinite feasibility test**, with a cost that grows rapidly with the Hilbert-space dimension $d$.
+
+The **quantum SWITCH** offers a shortcut: applying two measurement processes in a coherent superposition of causal orders turns incompatibility into a **single interference signal** on a control qubit, with a sample complexity **independent of $d$**.
+:::
+
+::: {.card title="The SWITCH as an incompatibility witness" accent="blue"}
+::: {.placeholder height="16cm"}
+Fig. 1 — Quantum SWITCH circuit: control qubit $\lvert +\rangle$, two processes $\mathcal{A}$, $\mathcal{B}$ in superposed orders, Fourier measurement of the control.
+:::
+
+With the control in $\lvert +\rangle$ and measured in the Fourier basis, the probability of the "$-$" outcome is
+
+$$
+p_- = \tfrac{1}{4}\sum_{i,j}\operatorname{Tr}\left(\rho\,\lvert[C_i,D_j]\rvert^2\right),
+\qquad
+\mathrm{NCOM}_\rho = \sqrt{2p_-}.
+$$
+
+For projective observables with spectral projectors $\{P_i\}$, $\{Q_j\}$ the Lüders channels are dephasings, and the signal equals the **mutual eigenspace disturbance**
+
+$$
+\mathrm{MED}_\rho(\mathcal{A},\mathcal{B}) = \sqrt{1-\operatorname{Re}\sum_{i,j}\operatorname{Tr}\left[\rho\,P_iQ_jP_iQ_j\right]}.
+$$
+
+::: {.keybox}
+**Key point.** For sharp observables, $\mathrm{NCOM}_\rho = \mathrm{MED}_\rho$: one interference fringe certifies incompatibility, with no tomography and no SDP.
+:::
+:::
+
+:::
+
+::: {.col}
+
+::: {.card title="A time-bin quantum SWITCH" accent="coral"}
+Instead of two spatially separated interferometer arms, the control is a **time-bin qubit** $\{\lvert e\rangle,\lvert l\rangle\}$:
+the early bin experiences [$\mathcal{A}$ then $\mathcal{B}$]{.ab}, the late bin [$\mathcal{B}$ then $\mathcal{A}$]{.ba}.
+
+::: {.placeholder height="15cm"}
+Fig. 2 — Optical setup: heralded polarization qubit, time-bin control, waveplates + calcite crystals for each block, final interference on the control.
+:::
+:::
+
+::: {.card title="Dephasing via birefringent walk-off" accent="coral"}
+A birefringent crystal delays $\lvert V\rangle$ relative to $\lvert H\rangle$ by $\Delta\tau = L\,\Delta n_g/c$. Tracing out the temporal mode multiplies the coherence by
+
+$$
+\gamma(\Delta\tau) = \int \lvert f(\omega)\rvert^2 e^{-i\omega\Delta\tau}\,d\omega \;\longrightarrow\; 0
+\quad (\Delta\tau \gg \tau_{\text{coh}}),
+$$
+
+realising the Lüders dephasing $\mathcal{A}(\rho)=\sum_i P_i\rho P_i$. A **QWP + HWP** pair rotates the dephasing axis to **any** measurement basis.
+
+::: {.note accent="coral"}
+**Timescale hierarchy:** $\tau_{\text{coh}} = 3.3\,\text{ps} \ll \Delta\tau_A \approx 10\,\text{ps},\ \Delta\tau_B \approx 18\,\text{ps} \ll \Delta t_c = 150\,\text{ns}$
+:::
+:::
+
+::: {.card title="Robust by construction" accent="coral"}
+Temporal shifts commute, $T_{\tau_A}T_{\tau_B} = T_{\tau_B}T_{\tau_A}$, so both causal orders produce **identical output wavepackets**, regardless of crystal lengths.
+
+::: {.keybox}
+**No active interferometric stabilization needed:** the two orders recombine coherently by symmetry.
+:::
+:::
+
+:::
+
+::: {.col}
+
+::: {.card title="Expected signal" accent="blue"}
+::: {.placeholder height="17cm"}
+Fig. 3 — Simulated $p_-$ (and MED) versus the angle between the eigenbases of $A$ and $B$, with expected experimental error bands.
+:::
+:::
+
+::: {.card title="Status" accent="blue"}
+::: {.placeholder height="13cm"}
+Fig. 4 — Waveplate characterization and heralded single-photon polarization tomography.
+:::
+:::
+
+::: {.card title="Outlook: unsharp measurements" accent="gold"}
+For **POVMs**, commutativity is *no longer necessary* for joint measurability. The operational meaning of the switch signal must therefore be established anew. We are developing the theory of what the SWITCH certifies in this regime.
+:::
+
+::: {.card title="References" numbered="false" accent="blue"}
+::: {.smallrefs}
+[1] N. Gao *et al.*, Phys. Rev. Lett. **130**, 170201 (2023).\
+[2] G. Chiribella *et al.*, Phys. Rev. A **88**, 022318 (2013).
+:::
+:::
+
+:::
+
+::::

@@ -1,0 +1,180 @@
+---
+title: "Certifying Incompatibility and Clustering Observables with a Photonic Quantum Switch"
+event: "Vienna QFC 2026"
+poster-authors:
+  - name: "Vivek Sabarad"
+    aff: "1,2,*"
+  - name: "Carla Richter"
+    aff: "1"
+  - name: "Martin Mauser"
+    aff: "1,2"
+  - name: "Iris Agresti"
+    aff: "1"
+  - name: "Lee Rozema"
+    aff: "1"
+  - name: "Philip Walther"
+    aff: "1,3"
+poster-affiliations:
+  - "University of Vienna, Faculty of Physics, Vienna Center for Quantum Science and Technology (VCQ), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "University of Vienna, Faculty of Physics, Vienna Doctoral School in Physics (VDSP), Boltzmanngasse 5, 1090 Vienna, Austria"
+  - "Institute for Quantum Optics and Quantum Information (IQOQI) Vienna, Austrian Academy of Sciences, Vienna, Austria"
+poster-theme: "swiss"
+poster-logo: "logos/univie.svg"
+footer-logos:
+  - "logos/fwf.svg"
+  - "logos/eu-funded.png"
+poster-funding: "This work was supported by the EPIQUE project, funded by the European Union and the Austrian Science Fund (FWF). [grant numbers TBD]"
+contact: "\\* vivek.sabarad\\@univie.ac.at"
+format:
+  qposter-typst:
+    font-paths: ["fonts"]
+---
+
+<!-- ROW 1 — question and idea, one section -->
+::: {.card title="Incompatibility as a single interference signal"}
+:::: {.poster-grid widths="1fr, 1.6fr"}
+
+::: {.col}
+::: {.placeholder height="10cm"}
+The question in 3–4 lines: when are two measurements compatible? Standard route (tomography → SDP) scales with $d$; the switch route gives one number, independent of $d$.
+:::
+:::
+
+::: {.col}
+::: {.placeholder height="10cm"}
+The idea in one picture: eigenbases of $A$, $B$ → [$\mathcal{A}$ then $\mathcal{B}$]{.ab} and [$\mathcal{B}$ then $\mathcal{A}$]{.ba} in superposition → interference on the control → $p_-$ → MED.
+:::
+:::
+
+::::
+:::
+
+<!-- ROW 2 — the two tracks -->
+::: {.card title="Photonic implementation"}
+
+One intro line: the system is the polarization qubit of a heralded single photon.
+
+:::: {.tracks left="Theory" right="Photonic realisation"}
+
+::: {.pair label="a"}
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Control qubit $\lvert+\rangle$ selects the causal order
+:::
+:::
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Time bins $\lvert e\rangle$, $\lvert l\rangle$ separated by $\Delta t_c = 150$ ns
+:::
+:::
+:::
+
+::: {.pair label="b"}
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Superposed orders [$\mathcal{A}\circ\mathcal{B}$]{.ab} / [$\mathcal{B}\circ\mathcal{A}$]{.ba}
+:::
+:::
+::: {.col}
+::: {.placeholder height="3.2cm"}
+[Early bin: $A$ then $B$]{.ab} / [late bin: $B$ then $A$]{.ba}
+:::
+:::
+:::
+
+::: {.pair label="c"}
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Lüders channel $\mathcal{A}(\rho)=\sum_i P_i\rho P_i$
+:::
+:::
+::: {.col}
+::: {.placeholder height="3.2cm"}
+QWP + HWP choose the basis, calcite walk-off dephases ($\Delta\tau \gg \tau_{\text{coh}}$)
+:::
+:::
+:::
+
+::: {.pair label="d"}
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Coherent recombination of the two orders
+:::
+:::
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Delays commute, $T_{\tau_A}T_{\tau_B}=T_{\tau_B}T_{\tau_A}$ → no active stabilization
+:::
+:::
+:::
+
+::: {.pair label="e"}
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Signal $p_- = \mathrm{MED}_\rho^2/2$ for sharp observables
+:::
+:::
+::: {.col}
+::: {.placeholder height="3.2cm"}
+Click rate of the "$-$" outcome of the time-bin control
+:::
+:::
+:::
+
+::::
+
+:::
+
+<!-- ROW 3 — setup + qubit result -->
+:::: {.poster-grid widths="1.6fr, 1fr"}
+
+::: {.col}
+::: {.card title="Setup"}
+::: {.placeholder height="12cm"}
+Setup schematic, elements tagged with the same letters (a)–(e) as the rows above.
+:::
+:::
+:::
+
+::: {.col}
+::: {.card title="Qubits: expected signal"}
+::: {.placeholder height="12cm"}
+Simulated $p_-$ / MED vs. angle between the eigenbases of $A$ and $B$.
+:::
+:::
+:::
+
+::::
+
+<!-- ROW 4 — higher dimensions + conclusion -->
+:::: {.poster-grid widths="1.6fr, 1fr"}
+
+::: {.col}
+::: {.card title="Clustering observables by incompatibility"}
+::: {.placeholder height="2.6cm"}
+2–3 lines: MED as a distance between observables → k-medoids clustering, robust to noise.
+:::
+:::: {.twocol}
+::: {.col}
+::: {.placeholder height="10cm"}
+Qubit observables: clustering result (noisy).
+:::
+:::
+::: {.col}
+::: {.placeholder height="10cm"}
+Qutrit observables ($d=3$): clustering result (noisy).
+:::
+:::
+::::
+:::
+:::
+
+::: {.col}
+::: {.card title="Conclusion and outlook"}
+::: {.placeholder height="12.8cm"}
+3 take-aways. Outlook: higher-dimensional implementation (AOM frequency bins or time bins — open); one line on unsharp measurements. References.
+:::
+:::
+:::
+
+::::

@@ -1,0 +1,15 @@
+title: QPoster
+author: Vivek Sabarad
+version: 0.1.0
+quarto-required: ">=1.5.0"
+contributes:
+  formats:
+    typst:
+      template-partials:
+        - page.typ
+        - typst-template.typ
+        - typst-show.typ
+      filters:
+        - qposter.lua
+      keep-typ: true
+      section-numbering: null
